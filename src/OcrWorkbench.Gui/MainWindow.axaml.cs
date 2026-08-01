@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly TextBox _resultText;
     private readonly GuiSettingsStore _settings = new(GetDefaultSettingsPath());
     private readonly IInteractiveScreenshotService? _screenshotService;
+    private readonly IScreenCapturePermissionService? _screenCapturePermissionService;
     private readonly IGlobalHotkeyService? _hotkeyService;
     private int _screenshotRunning;
 
@@ -46,7 +47,9 @@ public sealed partial class MainWindow : Window
 
         if (OperatingSystem.IsMacOSVersionAtLeast(15, 2))
         {
-            _screenshotService = new MacOSInteractiveScreenshotService();
+            var screenshotService = new MacOSInteractiveScreenshotService();
+            _screenshotService = screenshotService;
+            _screenCapturePermissionService = screenshotService;
             _hotkeyService = new MacOSGlobalHotkeyService();
             _hotkeyService.Pressed += HotkeyPressed;
             Opened += WindowOpenedAsync;
@@ -152,6 +155,21 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            _statusText.Text = "Checking Screen Recording permission…";
+            var permission = await _screenCapturePermissionService!.RequestAccessAsync();
+            if (permission != ScreenCapturePermissionStatus.Granted)
+            {
+                Show();
+                Activate();
+                _statusText.Text = permission == ScreenCapturePermissionStatus.Unsupported
+                    ? "Screenshot OCR is unavailable on this platform."
+                    : "Screen Recording permission is required; grant it in System Settings and relaunch NEOCR.";
+                _resultText.Text = permission == ScreenCapturePermissionStatus.Denied
+                    ? "macOS may not display the prompt again after a denial. Open Privacy & Security > Screen Recording, enable NEOCR, and relaunch the app."
+                    : string.Empty;
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(_pluginDirectory.Text))
             {
                 Show();

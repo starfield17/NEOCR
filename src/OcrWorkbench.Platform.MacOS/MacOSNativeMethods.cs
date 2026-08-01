@@ -19,6 +19,12 @@ internal static unsafe partial class MacOSNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "neocr_hotkey_unregister")]
     internal static partial void UnregisterHotkey();
 
+    [LibraryImport(LibraryName, EntryPoint = "neocr_capture_preflight_access")]
+    internal static partial int PreflightCaptureAccess();
+
+    [LibraryImport(LibraryName, EntryPoint = "neocr_capture_request_access")]
+    internal static partial int RequestCaptureAccess();
+
     [LibraryImport(LibraryName, EntryPoint = "neocr_capture_begin")]
     internal static partial int BeginCapture(
         delegate* unmanaged[Cdecl]<int, nint, nuint, int, int, nint, nint, void> callback,

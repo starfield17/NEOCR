@@ -29,6 +29,18 @@ public interface IInteractiveScreenshotService
     Task<ScreenshotCaptureResult> CaptureRegionAsync(CancellationToken cancellationToken = default);
 }
 
+public interface IScreenCapturePermissionService
+{
+    ValueTask<ScreenCapturePermissionStatus> RequestAccessAsync(CancellationToken cancellationToken = default);
+}
+
+public enum ScreenCapturePermissionStatus
+{
+    Granted = 1,
+    Denied = 2,
+    Unsupported = 3,
+}
+
 public abstract record ScreenshotCaptureResult
 {
     private ScreenshotCaptureResult() { }

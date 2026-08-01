@@ -97,7 +97,7 @@ public sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
         }
 
         var version = MacOSNativeMethods.GetAbiVersion();
-        if (version != 1)
+        if (version != 2)
         {
             throw new InvalidOperationException($"Unsupported macOS native ABI version: {version}.");
         }

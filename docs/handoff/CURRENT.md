@@ -15,6 +15,7 @@ The commit containing this file is the handoff baseline. macOS Screenshot OCR im
 - macOS 15.2 Objective-C++ adapter using Carbon hotkey registration, AppKit selection overlays, and ScreenCaptureKit region capture.
 - Screenshot OCR GUI action, `Control+Option+O`, persisted plugin location, result copy, one-operation gating, and temporary screenshot cleanup.
 - Universal arm64/x86_64 native dylib and an ad-hoc signed `.app` packaging path.
+- Explicit Screen Recording permission port and macOS ABI v2; Screenshot OCR requests access before validating the recognizer package.
 - Architecture/continuity documentation and dependency/link guards.
 
 ## Verification baseline
@@ -31,7 +32,7 @@ The commit containing this file is the handoff baseline. macOS Screenshot OCR im
 ## Known gaps
 
 - No production OCR worker/model package exists yet.
-- Screen Recording permission, drag selection, mixed-scale/cross-display coordinates, shortcut conflict, and result copy still require hands-on macOS QA.
+- The permission-first regression, drag selection, mixed-scale/cross-display coordinates, shortcut conflict, and result copy still require hands-on macOS QA.
 - Jobs have no page checkpoints, pause/resume runner, or restart recovery.
 - A worker is started per GUI operation; pooling and crash restart are not implemented.
 - In-flight worker cancellation is not yet correlation-safe.

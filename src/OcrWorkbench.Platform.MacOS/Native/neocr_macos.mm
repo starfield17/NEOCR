@@ -24,6 +24,8 @@ int32_t neocr_hotkey_register(uint32_t virtual_key_code,
                               neo_hotkey_callback callback,
                               void *context);
 void neocr_hotkey_unregister(void);
+int32_t neocr_capture_preflight_access(void);
+int32_t neocr_capture_request_access(void);
 int32_t neocr_capture_begin(neo_capture_callback callback, void *context);
 void neocr_capture_cancel(void);
 void neocr_buffer_free(void *buffer);
@@ -132,7 +134,7 @@ static NeoCaptureSession *g_capture_session = nil;
 }
 
 - (void)begin {
-    if (!CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess()) {
+    if (!CGPreflightScreenCaptureAccess()) {
         [self completeWithStatus:2 bytes:nullptr length:0 width:0 height:0 error:"Screen Recording permission is required. Grant access in System Settings, then relaunch NEOCR."];
         return;
     }
@@ -275,7 +277,7 @@ static NeoCaptureSession *g_capture_session = nil;
 @end
 
 extern "C" int32_t neocr_macos_abi_version(void) {
-    return 1;
+    return 2;
 }
 
 extern "C" int32_t neocr_hotkey_register(uint32_t virtual_key_code,
@@ -319,6 +321,26 @@ extern "C" void neocr_hotkey_unregister(void) {
     }
     g_hotkey_callback = nullptr;
     g_hotkey_context = nullptr;
+}
+
+extern "C" int32_t neocr_capture_preflight_access(void) {
+    return CGPreflightScreenCaptureAccess() ? 1 : 0;
+}
+
+extern "C" int32_t neocr_capture_request_access(void) {
+    if (CGPreflightScreenCaptureAccess()) return 1;
+
+    if ([NSThread isMainThread]) {
+        [NSApp activateIgnoringOtherApps:YES];
+        return CGRequestScreenCaptureAccess() ? 1 : 0;
+    }
+
+    __block BOOL granted = NO;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        [NSApp activateIgnoringOtherApps:YES];
+        granted = CGRequestScreenCaptureAccess();
+    });
+    return granted ? 1 : 0;
 }
 
 extern "C" int32_t neocr_capture_begin(neo_capture_callback callback, void *context) {

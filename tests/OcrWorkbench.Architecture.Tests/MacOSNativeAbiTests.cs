@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OcrWorkbench.Platform.MacOS;
 
 namespace OcrWorkbench.Architecture.Tests;
@@ -12,6 +13,21 @@ public sealed class MacOSNativeAbiTests
             return;
         }
 
-        Assert.Equal(1, MacOSPlatformDiagnostics.NativeAbiVersion);
+        Assert.Equal(2, MacOSPlatformDiagnostics.NativeAbiVersion);
+
+        Assert.True(NativeLibrary.TryLoad(
+            "neocr_macos",
+            typeof(MacOSPlatformDiagnostics).Assembly,
+            DllImportSearchPath.ApplicationDirectory,
+            out var handle));
+        try
+        {
+            Assert.True(NativeLibrary.TryGetExport(handle, "neocr_capture_preflight_access", out _));
+            Assert.True(NativeLibrary.TryGetExport(handle, "neocr_capture_request_access", out _));
+        }
+        finally
+        {
+            NativeLibrary.Free(handle);
+        }
     }
 }

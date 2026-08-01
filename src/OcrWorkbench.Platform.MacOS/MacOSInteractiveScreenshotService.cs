@@ -4,11 +4,31 @@ using OcrWorkbench.Core;
 
 namespace OcrWorkbench.Platform.MacOS;
 
-public sealed class MacOSInteractiveScreenshotService : IInteractiveScreenshotService
+public sealed class MacOSInteractiveScreenshotService : IInteractiveScreenshotService, IScreenCapturePermissionService
 {
     private sealed class CaptureOperation
     {
         public TaskCompletionSource<ScreenshotCaptureResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public ValueTask<ScreenCapturePermissionStatus> RequestAccessAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!OperatingSystem.IsMacOSVersionAtLeast(15, 2))
+        {
+            return ValueTask.FromResult(ScreenCapturePermissionStatus.Unsupported);
+        }
+
+        EnsureAbi();
+        if (MacOSNativeMethods.PreflightCaptureAccess() == 1)
+        {
+            return ValueTask.FromResult(ScreenCapturePermissionStatus.Granted);
+        }
+
+        var status = MacOSNativeMethods.RequestCaptureAccess() == 1
+            ? ScreenCapturePermissionStatus.Granted
+            : ScreenCapturePermissionStatus.Denied;
+        return ValueTask.FromResult(status);
     }
 
     public async Task<ScreenshotCaptureResult> CaptureRegionAsync(CancellationToken cancellationToken = default)
@@ -20,12 +40,7 @@ public sealed class MacOSInteractiveScreenshotService : IInteractiveScreenshotSe
                 "Interactive screenshot OCR requires macOS 15.2 or newer.");
         }
 
-        if (MacOSNativeMethods.GetAbiVersion() != 1)
-        {
-            return new ScreenshotCaptureResult.Failed(
-                ScreenshotCaptureFailure.NativeFailure,
-                "The macOS native adapter has an unsupported ABI version.");
-        }
+        EnsureAbi();
 
         var operation = new CaptureOperation();
         var handle = GCHandle.Alloc(operation);
@@ -45,6 +60,15 @@ public sealed class MacOSInteractiveScreenshotService : IInteractiveScreenshotSe
 
     private static unsafe int BeginNativeCapture(nint context) =>
         MacOSNativeMethods.BeginCapture(&CaptureCompleted, context);
+
+    private static void EnsureAbi()
+    {
+        var version = MacOSNativeMethods.GetAbiVersion();
+        if (version != 2)
+        {
+            throw new InvalidOperationException($"Unsupported macOS native ABI version: {version}.");
+        }
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void CaptureCompleted(
