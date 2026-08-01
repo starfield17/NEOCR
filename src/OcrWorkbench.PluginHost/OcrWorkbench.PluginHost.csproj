@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../OcrWorkbench.Contracts/OcrWorkbench.Contracts.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+  </ItemGroup>
+</Project>
+

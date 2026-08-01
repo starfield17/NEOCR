@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="OcrWorkbench.Gui.MainWindow"
+        x:CompileBindings="False"
+        Title="OCR Workbench"
+        Width="860"
+        Height="620"
+        MinWidth="680"
+        MinHeight="500">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" Margin="24" RowSpacing="12">
+    <StackPanel Grid.Row="0" Spacing="4">
+      <TextBlock FontSize="28" FontWeight="SemiBold">OCR Workbench</TextBlock>
+      <TextBlock Opacity="0.7">Phase 1 shell · GUI and CLI use the same persisted job service.</TextBlock>
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="150,*" ColumnSpacing="12">
+      <TextBlock VerticalAlignment="Center">Recognizer plugin</TextBlock>
+      <TextBox x:Name="PluginDirectory" Grid.Column="1" PlaceholderText="Plugin package directory" />
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="150,*" ColumnSpacing="12">
+      <TextBlock VerticalAlignment="Top" Margin="0,8,0,0">Image paths</TextBlock>
+      <TextBox x:Name="ImagePaths"
+               Grid.Column="1"
+               AcceptsReturn="True"
+               MinHeight="100"
+               PlaceholderText="One image path per line" />
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="150,*" ColumnSpacing="12">
+      <TextBlock VerticalAlignment="Center">Plain-text output</TextBlock>
+      <TextBox x:Name="OutputPath" Grid.Column="1" PlaceholderText="Output .txt path" />
+    </Grid>
+
+    <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="12">
+      <Button x:Name="RunButton" MinWidth="120">Run batch</Button>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.8">Ready</TextBlock>
+    </StackPanel>
+
+    <TextBox x:Name="ResultText"
+             Grid.Row="5"
+             IsReadOnly="True"
+             AcceptsReturn="True"
+             TextWrapping="Wrap"
+             PlaceholderText="Recognition output appears here" />
+  </Grid>
+</Window>

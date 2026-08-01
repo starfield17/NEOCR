@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "org.ocrworkbench.fake",
+  "version": "0.1.0",
+  "kind": "recognizer",
+  "entrypoint": "OcrWorkbench.FakeWorker.dll",
+  "protocolMinimum": 1,
+  "protocolMaximum": 1,
+  "runtimeIdentifiers": ["any"],
+  "capabilities": ["recognize.image", "output.spatial-text"],
+  "license": "Apache-2.0"
+}
+

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OcrWorkbench.Contracts/OcrWorkbench.Contracts.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+    <ProjectReference Include="../OcrWorkbench.PluginHost/OcrWorkbench.PluginHost.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Infrastructure/OcrWorkbench.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

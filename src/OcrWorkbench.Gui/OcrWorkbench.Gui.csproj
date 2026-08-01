@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <ProjectReference Include="../OcrWorkbench.Contracts/OcrWorkbench.Contracts.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Infrastructure/OcrWorkbench.Infrastructure.csproj" />
+    <ProjectReference Include="../OcrWorkbench.PluginHost/OcrWorkbench.PluginHost.csproj" />
+  </ItemGroup>
+</Project>
+

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+    <ProjectReference Include="../OcrWorkbench.Contracts/OcrWorkbench.Contracts.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+  </ItemGroup>
+</Project>

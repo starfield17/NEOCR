@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package ocrworkbench.plugin.v1;
+option csharp_namespace = "OcrWorkbench.Contracts.Plugin.V1";
+
+enum PluginKind {
+  PLUGIN_KIND_UNSPECIFIED = 0;
+  PLUGIN_KIND_RECOGNIZER = 1;
+  PLUGIN_KIND_DOCUMENT_SOURCE = 2;
+  PLUGIN_KIND_VLM_PROVIDER = 3;
+  PLUGIN_KIND_EXPORTER = 4;
+}
+
+message Envelope {
+  uint32 protocol_version = 1;
+  string correlation_id = 2;
+
+  oneof payload {
+    HelloRequest hello_request = 10;
+    HelloResponse hello_response = 11;
+    ProcessPageRequest process_page_request = 12;
+    ProcessPageResponse process_page_response = 13;
+    DeclinedResponse declined_response = 14;
+    ErrorResponse error_response = 15;
+    CancelRequest cancel_request = 16;
+    ShutdownRequest shutdown_request = 17;
+    Ack ack = 18;
+  }
+}
+
+message HelloRequest {
+  string host_version = 1;
+  uint32 minimum_protocol_version = 2;
+  uint32 maximum_protocol_version = 3;
+}
+
+message HelloResponse {
+  string plugin_id = 1;
+  string plugin_version = 2;
+  PluginKind kind = 3;
+  uint32 negotiated_protocol_version = 4;
+  repeated string capabilities = 5;
+  uint32 maximum_concurrency = 6;
+}
+
+message ProcessPageRequest {
+  string artifact_path = 1;
+  string mime_type = 2;
+  string language = 3;
+}
+
+message Point {
+  double x = 1;
+  double y = 2;
+}
+
+message SpatialTextBlock {
+  string text = 1;
+  repeated Point polygon = 2;
+  double confidence = 3;
+  string source = 4;
+}
+
+message ProcessPageResponse {
+  repeated SpatialTextBlock blocks = 1;
+  string semantic_markdown = 2;
+}
+
+message DeclinedResponse {
+  string reason_code = 1;
+  string message = 2;
+  bool retryable = 3;
+  repeated string allowed_fallback_classes = 4;
+}
+
+message ErrorResponse {
+  string error_code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message CancelRequest {
+  string target_correlation_id = 1;
+}
+
+message ShutdownRequest {}
+
+message Ack {}
+

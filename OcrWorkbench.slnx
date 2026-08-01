@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OcrWorkbench.Contracts/OcrWorkbench.Contracts.csproj" />
+    <Project Path="src/OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+    <Project Path="src/OcrWorkbench.PluginHost/OcrWorkbench.PluginHost.csproj" />
+    <Project Path="src/OcrWorkbench.Infrastructure/OcrWorkbench.Infrastructure.csproj" />
+    <Project Path="src/OcrWorkbench.Cli/OcrWorkbench.Cli.csproj" />
+    <Project Path="src/OcrWorkbench.Gui/OcrWorkbench.Gui.csproj" />
+  </Folder>
+  <Folder Name="/workers/">
+    <Project Path="workers/OcrWorkbench.FakeWorker/OcrWorkbench.FakeWorker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OcrWorkbench.Core.Tests/OcrWorkbench.Core.Tests.csproj" />
+  </Folder>
+</Solution>
