@@ -41,3 +41,4 @@ If access was denied previously, macOS may not show the dialog again. Enable NEO
 5. Verify PNG recognition, result copy, and temporary-file cleanup.
 6. Trigger repeatedly during an active selection; only one overlay may exist.
 7. Quit and verify the shortcut is no longer registered.
+8. Run two OCR operations with the fake worker and verify the same worker remains active; cancel an active batch and verify its job is `Cancelled` and a later operation succeeds.

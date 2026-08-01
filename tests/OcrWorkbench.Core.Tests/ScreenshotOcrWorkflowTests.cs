@@ -109,6 +109,35 @@ public sealed class ScreenshotOcrWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task Capture_completed_callback_runs_before_recognition()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var callbackCompleted = false;
+            var store = new MemoryJobStore();
+            await using var recognizer = new CallbackCheckingRecognizer(() => callbackCompleted);
+            var workflow = new ScreenshotOcrWorkflow(
+                new FixedScreenshotService(new ScreenshotCaptureResult.Succeeded([1], 1, 1)),
+                store,
+                recognizer,
+                root);
+
+            await workflow.RunAsync(onCaptureCompleted: () =>
+            {
+                callbackCompleted = true;
+                return ValueTask.CompletedTask;
+            });
+
+            Assert.True(callbackCompleted);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryRoot()
     {
         var path = Path.Combine(Path.GetTempPath(), $"neocr-screenshot-test-{Guid.NewGuid():N}");
@@ -163,6 +192,22 @@ public sealed class ScreenshotOcrWorkflowTests
             CancellationToken cancellationToken = default)
         {
             PluginOutcome<RecognitionResult> result = new PluginOutcome<RecognitionResult>.Failed("Test.Failed", "failure", false);
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class CallbackCheckingRecognizer(Func<bool> callbackCompleted) : IRecognizer
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public ValueTask<PluginOutcome<RecognitionResult>> RecognizeAsync(
+            PageArtifact page,
+            RecognitionOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.True(callbackCompleted());
+            PluginOutcome<RecognitionResult> result = new PluginOutcome<RecognitionResult>.Succeeded(
+                new RecognitionResult([new SpatialTextBlock("recognized capture.png", [], 1, "test")]));
             return ValueTask.FromResult(result);
         }
     }

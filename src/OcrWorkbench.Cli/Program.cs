@@ -15,6 +15,13 @@ static async Task<int> RunAsync(string[] args)
         return 2;
     }
 
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancelHandler;
     try
     {
         var job = new JobSpec(
@@ -22,11 +29,13 @@ static async Task<int> RunAsync(string[] args)
             new RecognitionOptions(options.Language),
             new PlainTextExportOptions(options.OutputPath));
         var store = new SqliteJobStore(options.DatabasePath ?? GetDefaultDatabasePath());
-        await store.InitializeAsync();
-        var package = await PluginPackage.LoadAsync(options!.PluginDirectory);
+        await store.InitializeAsync(cancellation.Token);
+        var package = await PluginPackage.LoadAsync(options!.PluginDirectory, cancellation.Token);
         await using var recognizer = await package.StartRecognizerAsync(
-            line => Console.Error.WriteLine($"worker: {line}"));
-        var execution = await new JobExecutionService(store, recognizer).ExecuteAsync(job);
+            line => Console.Error.WriteLine($"worker: {line}"),
+            cancellation.Token);
+        var execution = await new JobExecutionService(store, recognizer)
+            .ExecuteAsync(job, cancellation.Token);
         var result = execution.Pipeline;
 
         if (options.Json)
@@ -42,10 +51,19 @@ static async Task<int> RunAsync(string[] args)
 
         return result.Declined.Count == 0 ? 0 : 3;
     }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+    {
+        Console.Error.WriteLine("Cancelled.");
+        return 130;
+    }
     catch (Exception exception)
     {
         Console.Error.WriteLine($"error: {exception.Message}");
         return 1;
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancelHandler;
     }
 }
 

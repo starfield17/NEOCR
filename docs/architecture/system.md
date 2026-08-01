@@ -35,7 +35,7 @@ Platform APIs are exposed to the application as ports owned by Core. macOS, Wind
 1. A composition root constructs a `JobSpec` containing file-backed image inputs, recognition options, and an export target.
 2. `JobExecutionService` persists the queued job and claims it with a compare-and-swap state transition.
 3. `OcrPipeline` creates a stable page artifact and asks an `IRecognizer` to process it.
-4. The plugin host sends a protocol-v1 request to the worker and maps the reply to succeeded, declined, or failed.
+4. The plugin host reuses a healthy single-flight worker, sends a protocol-v1 request, and maps the correlated reply to succeeded, declined, or failed.
 5. The exporter atomically replaces the output file, then the job reaches a terminal state.
 
 Interactive screenshots are intentionally ephemeral: the platform adapter returns PNG bytes, the GUI workflow writes a private temporary input, submits the normal job, reads the text result, and removes both temporary files. SQLite stores job metadata and paths, not captured pixels or recognized text.
@@ -46,7 +46,9 @@ The target document flow is `document source -> ordered PageArtifact stream -> r
 
 ## State and failure semantics
 
-Jobs use explicit compare-and-swap transitions: queued, running, pausing, paused, completed, completed-with-errors, failed, or cancelled. Page-level persistence and restart recovery are roadmap work; the present implementation persists job-level state only.
+Jobs use explicit compare-and-swap transitions: queued, running, pausing, paused, completed, completed-with-errors, failed, or cancelled. Caller cancellation moves a running job to `cancelled` after the worker response stream is safe to reuse or the worker has been terminated. Page-level persistence and restart recovery are roadmap work; the present implementation persists job-level state only.
+
+Recognizer cancellation is cooperative first: the worker acknowledges a separately correlated cancel request and emits a terminal response for the target request. The host drains both responses before reuse and terminates an unresponsive process after two seconds. Worker crashes and protocol faults fail the current task without an implicit retry; a later task starts a replacement process.
 
 Plugin outcomes are deliberately distinct:
 

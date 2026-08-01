@@ -2,7 +2,7 @@
 
 ## Transport and framing
 
-Workers are child processes connected through stdin/stdout. Each message is a four-byte little-endian length prefix followed by a Protobuf `Envelope`. Diagnostic output belongs on stderr; stdout is protocol-only. The host rejects oversized, truncated, malformed, unsolicited, or incorrectly correlated frames.
+Workers are child processes connected through stdin/stdout. Each message is a four-byte big-endian length prefix followed by a Protobuf `Envelope`. Diagnostic output belongs on stderr; stdout is protocol-only. The host rejects oversized, truncated, malformed, unsolicited, or incorrectly correlated frames.
 
 ## Package loading
 
@@ -22,10 +22,12 @@ Model data and inference runtimes are independently replaceable package concerns
 2. Host sends `HelloRequest` with its supported protocol range.
 3. Worker returns identity, kind, negotiated version, capabilities, and maximum concurrency.
 4. Host sends correlated page requests.
-5. Worker returns exactly one succeeded, declined, or failed response for each request.
-6. Host may request cooperative cancellation and finally sends shutdown.
+5. Worker returns exactly one succeeded, declined, or failed response for each page request.
+6. To cancel a page, the host sends a separately correlated `CancelRequest` naming the target correlation ID. The worker acknowledges the cancel request and still emits one terminal response for the target.
+7. The host may reuse the worker only after both responses have been consumed. If either is missing after two seconds, the host terminates that process.
+8. The host finally sends a separately correlated shutdown request and expects an acknowledgement.
 
-The current host is single-flight per worker. Robust in-flight cancellation and persistent worker pooling are explicit roadmap items and must not be claimed as implemented.
+The host remains single-flight per recognizer worker even if `maximum_concurrency` is greater than one. A GUI session reuses one healthy worker for the selected package. Transport failure, invalid correlation, process exit, or a cancellation timeout invalidates that process; the current page is not retried implicitly, and a later request may start a replacement.
 
 ## Compatibility
 

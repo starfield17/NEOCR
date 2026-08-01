@@ -2,7 +2,7 @@
 
 A .NET 10 OCR workbench with a shared Avalonia GUI/CLI kernel and out-of-process OCR workers. The repository is named NEOCR; the existing `OcrWorkbench.*` assembly namespace is intentionally retained for now.
 
-The current implementation provides the persisted image-OCR foundation: image paths are sent to a versioned Protobuf worker process, job state is stored in SQLite, and successful spatial results are exported as plain text. The included fake worker validates orchestration and does not perform real OCR.
+The current implementation provides the persisted image-OCR foundation: image paths are sent to a reusable, versioned Protobuf worker process, job state is stored in SQLite, and successful spatial results are exported as plain text. Cooperative cancellation drains correlated responses before reuse, while failed workers are replaced on the next operation. The included fake worker validates orchestration and does not perform real OCR.
 
 Start with:
 

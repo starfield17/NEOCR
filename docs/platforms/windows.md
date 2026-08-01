@@ -8,7 +8,7 @@ Install Git and the .NET 10 SDK, then use PowerShell:
 git clone https://github.com/starfield17/NEOCR.git
 Set-Location NEOCR
 git fetch --all --prune
-git switch feature/macos-screenshot
+git switch feature/worker-lifecycle
 dotnet restore OcrWorkbench.slnx
 dotnet build OcrWorkbench.slnx
 dotnet test OcrWorkbench.slnx --no-build

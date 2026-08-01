@@ -62,12 +62,23 @@ public sealed partial class PluginPackage
         Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
+        EnsureRecognizer();
+
+        return WorkerProcessRecognizer.StartAsync(EntrypointPath, log, cancellationToken);
+    }
+
+    public WorkerRecognizerSession CreateRecognizerSession(Action<string>? log = null)
+    {
+        EnsureRecognizer();
+        return new WorkerRecognizerSession(this, log);
+    }
+
+    private void EnsureRecognizer()
+    {
         if (!string.Equals(Manifest.Kind, "recognizer", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"Plugin '{Manifest.Id}' is not a recognizer.");
         }
-
-        return WorkerProcessRecognizer.StartAsync(EntrypointPath, log, cancellationToken);
     }
 
     private static void ValidateManifest(PluginManifest manifest)
@@ -115,4 +126,3 @@ public sealed partial class PluginPackage
     [GeneratedRegex("^[a-z0-9]+(?:[.-][a-z0-9]+)+$", RegexOptions.CultureInvariant)]
     private static partial Regex PluginIdPattern();
 }
-

@@ -1,30 +1,44 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using OcrWorkbench.Contracts;
 using OcrWorkbench.Contracts.Plugin.V1;
 using OcrWorkbench.Core;
-using DomainPoint = OcrWorkbench.Contracts.SpatialPoint;
 using DomainBlock = OcrWorkbench.Contracts.SpatialTextBlock;
+using DomainPoint = OcrWorkbench.Contracts.SpatialPoint;
 using WireBlock = OcrWorkbench.Contracts.Plugin.V1.SpatialTextBlock;
 
 namespace OcrWorkbench.PluginHost;
 
 public sealed class WorkerProcessRecognizer : IRecognizer
 {
+    private static readonly TimeSpan CancellationGracePeriod = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ShutdownGracePeriod = TimeSpan.FromSeconds(2);
+
     private readonly Process _process;
-    private readonly SemaphoreSlim _requestLock = new(1, 1);
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<Envelope>> _pending = [];
+    private readonly Task _stdoutPump;
     private readonly Task _stderrPump;
-    private bool _disposed;
+    private int _faulted;
+    private int _disposed;
 
     private WorkerProcessRecognizer(Process process, Action<string>? log)
     {
         _process = process;
+        _stdoutPump = PumpStandardOutputAsync();
         _stderrPump = PumpStandardErrorAsync(process.StandardError, log, _lifetime.Token);
     }
 
     public string PluginId { get; private set; } = string.Empty;
     public string PluginVersion { get; private set; } = string.Empty;
     public IReadOnlyList<string> Capabilities { get; private set; } = [];
+    public uint MaximumConcurrency { get; private set; }
+
+    internal bool IsHealthy => Volatile.Read(ref _faulted) == 0
+        && Volatile.Read(ref _disposed) == 0
+        && !_process.HasExited;
 
     public static async Task<WorkerProcessRecognizer> StartAsync(
         string workerPath,
@@ -71,59 +85,60 @@ public sealed class WorkerProcessRecognizer : IRecognizer
         RecognitionOptions options,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        var response = await ExchangeAsync(
-            new Envelope
-            {
-                ProtocolVersion = PluginFraming.CurrentProtocolVersion,
-                CorrelationId = Guid.NewGuid().ToString("N"),
-                ProcessPageRequest = new ProcessPageRequest
-                {
-                    ArtifactPath = page.SourcePath,
-                    MimeType = page.MimeType,
-                    Language = options.Language,
-                },
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        return response.PayloadCase switch
+        ThrowIfUnavailable();
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Envelope.PayloadOneofCase.ProcessPageResponse => new PluginOutcome<RecognitionResult>.Succeeded(
-                new RecognitionResult(
-                    response.ProcessPageResponse.Blocks.Select(MapBlock).ToArray(),
-                    NullIfEmpty(response.ProcessPageResponse.SemanticMarkdown))),
-            Envelope.PayloadOneofCase.DeclinedResponse => new PluginOutcome<RecognitionResult>.Declined(
-                response.DeclinedResponse.ReasonCode,
-                response.DeclinedResponse.Message,
-                response.DeclinedResponse.Retryable,
-                response.DeclinedResponse.AllowedFallbackClasses.ToArray()),
-            Envelope.PayloadOneofCase.ErrorResponse => new PluginOutcome<RecognitionResult>.Failed(
-                response.ErrorResponse.ErrorCode,
-                response.ErrorResponse.Message,
-                response.ErrorResponse.Retryable),
-            _ => new PluginOutcome<RecognitionResult>.Failed(
-                "Protocol.UnexpectedResponse",
-                $"Unexpected worker response: {response.PayloadCase}.",
-                false),
-        };
+            ThrowIfUnavailable();
+            var correlationId = Guid.NewGuid().ToString("N");
+            var responseTask = await DispatchAsync(
+                new Envelope
+                {
+                    ProtocolVersion = PluginFraming.CurrentProtocolVersion,
+                    CorrelationId = correlationId,
+                    ProcessPageRequest = new ProcessPageRequest
+                    {
+                        ArtifactPath = page.SourcePath,
+                        MimeType = page.MimeType,
+                        Language = options.Language,
+                    },
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            Envelope response;
+            try
+            {
+                response = await responseTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await CancelAndDrainAsync(correlationId, responseTask).ConfigureAwait(false);
+                throw;
+            }
+
+            return MapOutcome(response);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
         try
         {
-            if (!_process.HasExited)
+            if (Volatile.Read(ref _faulted) == 0 && !_process.HasExited)
             {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 try
                 {
-                    await ExchangeAsync(
+                    using var timeout = new CancellationTokenSource(ShutdownGracePeriod);
+                    var response = await ExchangeAsync(
                         new Envelope
                         {
                             ProtocolVersion = PluginFraming.CurrentProtocolVersion,
@@ -131,31 +146,26 @@ public sealed class WorkerProcessRecognizer : IRecognizer
                             ShutdownRequest = new ShutdownRequest(),
                         },
                         timeout.Token).ConfigureAwait(false);
+                    if (response.PayloadCase != Envelope.PayloadOneofCase.Ack)
+                    {
+                        throw new InvalidDataException("Worker did not acknowledge shutdown.");
+                    }
                 }
-                catch (Exception) when (timeout.IsCancellationRequested || _process.HasExited)
+                catch (Exception) when (_process.HasExited)
+                {
+                }
+                catch (OperationCanceledException)
                 {
                 }
             }
         }
         finally
         {
-            _lifetime.Cancel();
-            if (!_process.HasExited)
-            {
-                _process.Kill(entireProcessTree: true);
-            }
-
-            await _process.WaitForExitAsync().ConfigureAwait(false);
-            try
-            {
-                await _stderrPump.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-
+            StopProcess(new ObjectDisposedException(nameof(WorkerProcessRecognizer)));
+            await WaitForProcessAndPumpsAsync().ConfigureAwait(false);
             _process.Dispose();
-            _requestLock.Dispose();
+            _operationGate.Dispose();
+            _writeLock.Dispose();
             _lifetime.Dispose();
         }
     }
@@ -182,7 +192,9 @@ public sealed class WorkerProcessRecognizer : IRecognizer
         }
 
         var hello = response.HelloResponse;
-        if (hello.Kind != PluginKind.Recognizer || hello.NegotiatedProtocolVersion != PluginFraming.CurrentProtocolVersion)
+        if (hello.Kind != PluginKind.Recognizer
+            || hello.NegotiatedProtocolVersion != PluginFraming.CurrentProtocolVersion
+            || hello.MaximumConcurrency == 0)
         {
             throw new InvalidDataException("Worker is not a compatible recognizer.");
         }
@@ -190,38 +202,189 @@ public sealed class WorkerProcessRecognizer : IRecognizer
         PluginId = hello.PluginId;
         PluginVersion = hello.PluginVersion;
         Capabilities = hello.Capabilities.ToArray();
+        MaximumConcurrency = hello.MaximumConcurrency;
+    }
+
+    private async Task CancelAndDrainAsync(string targetCorrelationId, Task<Envelope> targetResponse)
+    {
+        try
+        {
+            var cancelResponseTask = await DispatchAsync(
+                new Envelope
+                {
+                    ProtocolVersion = PluginFraming.CurrentProtocolVersion,
+                    CorrelationId = Guid.NewGuid().ToString("N"),
+                    CancelRequest = new CancelRequest { TargetCorrelationId = targetCorrelationId },
+                },
+                _lifetime.Token).ConfigureAwait(false);
+
+            await Task.WhenAll(targetResponse, cancelResponseTask)
+                .WaitAsync(CancellationGracePeriod, _lifetime.Token)
+                .ConfigureAwait(false);
+            if (cancelResponseTask.Result.PayloadCase != Envelope.PayloadOneofCase.Ack)
+            {
+                throw new InvalidDataException("Worker did not acknowledge cancellation.");
+            }
+        }
+        catch (Exception exception)
+        {
+            StopProcess(new InvalidOperationException(
+                $"Worker did not complete cooperative cancellation within {CancellationGracePeriod.TotalSeconds:0} seconds.",
+                exception));
+        }
     }
 
     private async Task<Envelope> ExchangeAsync(Envelope request, CancellationToken cancellationToken)
     {
-        await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var responseTask = await DispatchAsync(request, cancellationToken).ConfigureAwait(false);
+        return await responseTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<Task<Envelope>> DispatchAsync(
+        Envelope request,
+        CancellationToken dispatchCancellation)
+    {
+        ThrowIfUnavailable(allowDisposing: request.PayloadCase == Envelope.PayloadOneofCase.ShutdownRequest);
+        await _writeLock.WaitAsync(dispatchCancellation).ConfigureAwait(false);
+        TaskCompletionSource<Envelope>? completion = null;
         try
         {
-            if (_process.HasExited)
+            ThrowIfUnavailable(allowDisposing: request.PayloadCase == Envelope.PayloadOneofCase.ShutdownRequest);
+            dispatchCancellation.ThrowIfCancellationRequested();
+            completion = new TaskCompletionSource<Envelope>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_pending.TryAdd(request.CorrelationId, completion))
             {
-                throw new InvalidOperationException($"Worker exited with code {_process.ExitCode}.");
+                throw new InvalidOperationException($"Duplicate worker correlation ID: {request.CorrelationId}.");
             }
 
             await PluginFraming.WriteAsync(
                 _process.StandardInput.BaseStream,
                 request,
-                cancellationToken).ConfigureAwait(false);
-            var response = await PluginFraming.ReadAsync(
-                _process.StandardOutput.BaseStream,
-                cancellationToken).ConfigureAwait(false)
-                ?? throw new EndOfStreamException("Worker exited without a response.");
-            if (!string.Equals(response.CorrelationId, request.CorrelationId, StringComparison.Ordinal))
+                _lifetime.Token).ConfigureAwait(false);
+            return completion.Task;
+        }
+        catch (Exception exception)
+        {
+            if (completion is not null)
             {
-                throw new InvalidDataException("Worker response correlation ID does not match the request.");
+                _pending.TryRemove(request.CorrelationId, out _);
+                completion.TrySetException(exception);
             }
 
-            return response;
+            if (exception is not OperationCanceledException || !dispatchCancellation.IsCancellationRequested)
+            {
+                StopProcess(exception);
+            }
+
+            throw;
         }
         finally
         {
-            _requestLock.Release();
+            _writeLock.Release();
         }
     }
+
+    private async Task PumpStandardOutputAsync()
+    {
+        try
+        {
+            while (!_lifetime.IsCancellationRequested)
+            {
+                var response = await PluginFraming.ReadAsync(
+                    _process.StandardOutput.BaseStream,
+                    _lifetime.Token).ConfigureAwait(false)
+                    ?? throw new EndOfStreamException("Worker exited without closing the protocol cleanly.");
+                if (string.IsNullOrWhiteSpace(response.CorrelationId)
+                    || !_pending.TryRemove(response.CorrelationId, out var completion))
+                {
+                    throw new InvalidDataException(
+                        $"Worker returned an unsolicited correlation ID: '{response.CorrelationId}'.");
+                }
+
+                completion.TrySetResult(response);
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            StopProcess(exception);
+        }
+    }
+
+    private void StopProcess(Exception exception)
+    {
+        Interlocked.Exchange(ref _faulted, 1);
+        _lifetime.Cancel();
+        foreach (var pending in _pending.ToArray())
+        {
+            if (_pending.TryRemove(pending.Key, out var completion))
+            {
+                completion.TrySetException(exception);
+            }
+        }
+
+        try
+        {
+            if (!_process.HasExited)
+            {
+                _process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception processException) when (processException is InvalidOperationException
+                                                 or System.ComponentModel.Win32Exception)
+        {
+        }
+    }
+
+    private async Task WaitForProcessAndPumpsAsync()
+    {
+        try
+        {
+            await _process.WaitForExitAsync().ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        await IgnorePumpFailureAsync(_stdoutPump).ConfigureAwait(false);
+        await IgnorePumpFailureAsync(_stderrPump).ConfigureAwait(false);
+    }
+
+    private void ThrowIfUnavailable(bool allowDisposing = false)
+    {
+        if (!allowDisposing)
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        }
+
+        if (Volatile.Read(ref _faulted) != 0 || _process.HasExited)
+        {
+            throw new InvalidOperationException("Worker process is unavailable.");
+        }
+    }
+
+    private static PluginOutcome<RecognitionResult> MapOutcome(Envelope response) => response.PayloadCase switch
+    {
+        Envelope.PayloadOneofCase.ProcessPageResponse => new PluginOutcome<RecognitionResult>.Succeeded(
+            new RecognitionResult(
+                response.ProcessPageResponse.Blocks.Select(MapBlock).ToArray(),
+                NullIfEmpty(response.ProcessPageResponse.SemanticMarkdown))),
+        Envelope.PayloadOneofCase.DeclinedResponse => new PluginOutcome<RecognitionResult>.Declined(
+            response.DeclinedResponse.ReasonCode,
+            response.DeclinedResponse.Message,
+            response.DeclinedResponse.Retryable,
+            response.DeclinedResponse.AllowedFallbackClasses.ToArray()),
+        Envelope.PayloadOneofCase.ErrorResponse => new PluginOutcome<RecognitionResult>.Failed(
+            response.ErrorResponse.ErrorCode,
+            response.ErrorResponse.Message,
+            response.ErrorResponse.Retryable),
+        _ => new PluginOutcome<RecognitionResult>.Failed(
+            "Protocol.UnexpectedResponse",
+            $"Unexpected worker response: {response.PayloadCase}.",
+            false),
+    };
 
     private static DomainBlock MapBlock(WireBlock block) => new(
         block.Text,
@@ -245,6 +408,17 @@ public sealed class WorkerProcessRecognizer : IRecognizer
             }
 
             log?.Invoke(line);
+        }
+    }
+
+    private static async Task IgnorePumpFailureAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
         }
     }
 }

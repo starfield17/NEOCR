@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private readonly TextBox _outputPath;
     private readonly Button _runButton;
     private readonly Button _screenshotButton;
+    private readonly Button _cancelButton;
     private readonly Button _copyButton;
     private readonly TextBlock _statusText;
     private readonly TextBlock _hotkeyText;
@@ -27,7 +28,12 @@ public sealed partial class MainWindow : Window
     private readonly IInteractiveScreenshotService? _screenshotService;
     private readonly IScreenCapturePermissionService? _screenCapturePermissionService;
     private readonly IGlobalHotkeyService? _hotkeyService;
-    private int _screenshotRunning;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private CancellationTokenSource? _activeOperation;
+    private WorkerRecognizerSession? _recognizerSession;
+    private string? _recognizerDirectory;
+    private bool _closing;
+    private bool _shutdownCompleted;
 
     public MainWindow()
     {
@@ -37,13 +43,16 @@ public sealed partial class MainWindow : Window
         _outputPath = this.FindControl<TextBox>("OutputPath")!;
         _runButton = this.FindControl<Button>("RunButton")!;
         _screenshotButton = this.FindControl<Button>("ScreenshotButton")!;
+        _cancelButton = this.FindControl<Button>("CancelButton")!;
         _copyButton = this.FindControl<Button>("CopyButton")!;
         _statusText = this.FindControl<TextBlock>("StatusText")!;
         _hotkeyText = this.FindControl<TextBlock>("HotkeyText")!;
         _resultText = this.FindControl<TextBox>("ResultText")!;
         _runButton.Click += RunClickedAsync;
         _screenshotButton.Click += ScreenshotClickedAsync;
+        _cancelButton.Click += CancelClicked;
         _copyButton.Click += CopyClickedAsync;
+        Closing += WindowClosingAsync;
 
         if (OperatingSystem.IsMacOSVersionAtLeast(15, 2))
         {
@@ -53,7 +62,6 @@ public sealed partial class MainWindow : Window
             _hotkeyService = new MacOSGlobalHotkeyService();
             _hotkeyService.Pressed += HotkeyPressed;
             Opened += WindowOpenedAsync;
-            Closed += WindowClosed;
             _hotkeyText.Text = "Screenshot shortcut: Control+Option+O";
         }
         else
@@ -74,24 +82,36 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _runButton.IsEnabled = false;
+        var operation = BeginOperation();
+        if (operation is null)
+        {
+            _statusText.Text = "Another OCR operation is already active.";
+            return;
+        }
+
         _statusText.Text = "Running…";
         _resultText.Text = string.Empty;
         try
         {
             var store = new SqliteJobStore(GetDefaultDatabasePath());
-            await store.InitializeAsync();
-            var package = await PluginPackage.LoadAsync(_pluginDirectory.Text);
-            await _settings.SaveAsync(new GuiSettings(_pluginDirectory.Text));
-            await using var recognizer = await package.StartRecognizerAsync();
+            await store.InitializeAsync(operation.Token);
+            var package = await PluginPackage.LoadAsync(_pluginDirectory.Text, operation.Token);
+            await _settings.SaveAsync(new GuiSettings(_pluginDirectory.Text), operation.Token);
+            var recognizer = await GetRecognizerSessionAsync(package);
             var job = new JobSpec(
                 images.Select(path => new ImageInput(path)).ToArray(),
                 new RecognitionOptions(),
                 new PlainTextExportOptions(_outputPath.Text));
-            var execution = await new JobExecutionService(store, recognizer).ExecuteAsync(job);
-            _resultText.Text = await File.ReadAllTextAsync(execution.Pipeline.OutputPath);
+            var execution = await new JobExecutionService(store, recognizer)
+                .ExecuteAsync(job, operation.Token);
+            _resultText.Text = await File.ReadAllTextAsync(execution.Pipeline.OutputPath, operation.Token);
             _copyButton.IsEnabled = !string.IsNullOrEmpty(_resultText.Text);
             _statusText.Text = $"{execution.State} · {execution.JobId:D}";
+        }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            _statusText.Text = "Cancelled.";
+            _resultText.Text = string.Empty;
         }
         catch (Exception exception)
         {
@@ -100,7 +120,7 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            _runButton.IsEnabled = true;
+            EndOperation(operation);
         }
     }
 
@@ -122,15 +142,46 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void WindowClosed(object? sender, EventArgs eventArgs)
+    private async void WindowClosingAsync(object? sender, WindowClosingEventArgs eventArgs)
     {
-        if (_hotkeyService is null)
+        if (_shutdownCompleted)
         {
             return;
         }
 
-        _hotkeyService.Pressed -= HotkeyPressed;
-        _ = _hotkeyService.DisposeAsync();
+        eventArgs.Cancel = true;
+        if (_closing)
+        {
+            return;
+        }
+
+        _closing = true;
+        _activeOperation?.Cancel();
+        if (_hotkeyService is not null)
+        {
+            _hotkeyService.Pressed -= HotkeyPressed;
+        }
+
+        await _operationGate.WaitAsync();
+        try
+        {
+            if (_recognizerSession is not null)
+            {
+                await _recognizerSession.DisposeAsync();
+                _recognizerSession = null;
+            }
+
+            if (_hotkeyService is not null)
+            {
+                await _hotkeyService.DisposeAsync();
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+            _shutdownCompleted = true;
+            Close();
+        }
     }
 
     private void HotkeyPressed(object? sender, EventArgs eventArgs) =>
@@ -147,16 +198,18 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (Interlocked.Exchange(ref _screenshotRunning, 1) != 0)
+        var operation = BeginOperation();
+        if (operation is null)
         {
-            _statusText.Text = "A screenshot operation is already active.";
+            _statusText.Text = "Another OCR operation is already active.";
             return;
         }
 
         try
         {
             _statusText.Text = "Checking Screen Recording permission…";
-            var permission = await _screenCapturePermissionService!.RequestAccessAsync();
+            var permission = await _screenCapturePermissionService!
+                .RequestAccessAsync(operation.Token);
             if (permission != ScreenCapturePermissionStatus.Granted)
             {
                 Show();
@@ -184,15 +237,15 @@ public sealed partial class MainWindow : Window
             _copyButton.IsEnabled = false;
 
             var store = new SqliteJobStore(GetDefaultDatabasePath());
-            await store.InitializeAsync();
-            var package = await PluginPackage.LoadAsync(_pluginDirectory.Text);
-            await _settings.SaveAsync(new GuiSettings(_pluginDirectory.Text));
-            await using var recognizer = await package.StartRecognizerAsync();
+            await store.InitializeAsync(operation.Token);
+            var package = await PluginPackage.LoadAsync(_pluginDirectory.Text, operation.Token);
+            await _settings.SaveAsync(new GuiSettings(_pluginDirectory.Text), operation.Token);
+            var recognizer = await GetRecognizerSessionAsync(package);
 
             Hide();
-            var result = await new ScreenshotOcrWorkflow(_screenshotService, store, recognizer).RunAsync();
-            Show();
-            Activate();
+            var result = await new ScreenshotOcrWorkflow(_screenshotService, store, recognizer)
+                .RunAsync(operation.Token, ShowForScreenshotRecognitionAsync);
+            ShowIfOpen();
 
             switch (result)
             {
@@ -217,18 +270,105 @@ public sealed partial class MainWindow : Window
                     break;
             }
         }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            ShowIfOpen();
+            _statusText.Text = "Cancelled.";
+            _resultText.Text = string.Empty;
+        }
         catch (Exception exception)
         {
-            Show();
-            Activate();
+            ShowIfOpen();
             _statusText.Text = "Screenshot OCR failed.";
             _resultText.Text = exception.Message;
         }
         finally
         {
-            _screenshotButton.IsEnabled = _screenshotService is not null;
-            Interlocked.Exchange(ref _screenshotRunning, 0);
+            ShowIfOpen();
+            EndOperation(operation);
         }
+    }
+
+    private void CancelClicked(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (_activeOperation is null)
+        {
+            return;
+        }
+
+        _statusText.Text = "Cancelling…";
+        _cancelButton.IsEnabled = false;
+        _activeOperation.Cancel();
+    }
+
+    private CancellationTokenSource? BeginOperation()
+    {
+        if (_closing || !_operationGate.Wait(0))
+        {
+            return null;
+        }
+
+        var operation = new CancellationTokenSource();
+        _activeOperation = operation;
+        _runButton.IsEnabled = false;
+        _screenshotButton.IsEnabled = false;
+        _cancelButton.IsEnabled = true;
+        return operation;
+    }
+
+    private void EndOperation(CancellationTokenSource operation)
+    {
+        if (ReferenceEquals(_activeOperation, operation))
+        {
+            _activeOperation = null;
+        }
+
+        operation.Dispose();
+        _cancelButton.IsEnabled = false;
+        _runButton.IsEnabled = !_closing;
+        _screenshotButton.IsEnabled = !_closing && _screenshotService is not null;
+        _operationGate.Release();
+    }
+
+    private async Task<WorkerRecognizerSession> GetRecognizerSessionAsync(PluginPackage package)
+    {
+        if (_recognizerSession is not null
+            && string.Equals(
+                _recognizerDirectory,
+                package.Directory,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            return _recognizerSession;
+        }
+
+        if (_recognizerSession is not null)
+        {
+            await _recognizerSession.DisposeAsync();
+        }
+
+        _recognizerDirectory = package.Directory;
+        _recognizerSession = package.CreateRecognizerSession();
+        return _recognizerSession;
+    }
+
+    private async ValueTask ShowForScreenshotRecognitionAsync()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            ShowIfOpen();
+            _statusText.Text = "Recognizing screenshot…";
+        });
+    }
+
+    private void ShowIfOpen()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        Show();
+        Activate();
     }
 
     private async void CopyClickedAsync(object? sender, RoutedEventArgs eventArgs)

@@ -11,7 +11,9 @@ public sealed class ScreenshotOcrWorkflow(
     private readonly SemaphoreSlim _singleCapture = new(1, 1);
     private readonly string _temporaryRoot = temporaryRoot ?? Path.Combine(Path.GetTempPath(), "NEOCR");
 
-    public async Task<ScreenshotOcrResult> RunAsync(CancellationToken cancellationToken = default)
+    public async Task<ScreenshotOcrResult> RunAsync(
+        CancellationToken cancellationToken = default,
+        Func<ValueTask>? onCaptureCompleted = null)
     {
         if (!await _singleCapture.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
@@ -35,6 +37,13 @@ public sealed class ScreenshotOcrWorkflow(
                             ScreenshotCaptureFailure.NativeFailure,
                             "The screenshot service returned an empty image.");
                     }
+
+                    if (onCaptureCompleted is not null)
+                    {
+                        await onCaptureCompleted().ConfigureAwait(false);
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     operationDirectory = Path.Combine(_temporaryRoot, Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(operationDirectory);

@@ -13,7 +13,7 @@ public sealed class JobExecutionService(IJobStore store, IRecognizer recognizer)
             job.Id,
             JobState.Queued,
             JobState.Running,
-            cancellationToken: cancellationToken).ConfigureAwait(false))
+            cancellationToken: CancellationToken.None).ConfigureAwait(false))
         {
             throw new InvalidOperationException($"Job '{job.Id}' could not be claimed.");
         }
@@ -30,12 +30,21 @@ public sealed class JobExecutionService(IJobStore store, IRecognizer recognizer)
                 job.Id,
                 JobState.Running,
                 finalState,
-                cancellationToken: cancellationToken).ConfigureAwait(false))
+                cancellationToken: CancellationToken.None).ConfigureAwait(false))
             {
                 throw new InvalidOperationException($"Job '{job.Id}' completion could not be persisted.");
             }
 
             return new JobExecutionResult(job.Id, finalState, result);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await store.TransitionAsync(
+                job.Id,
+                JobState.Running,
+                JobState.Cancelled,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
         catch (Exception exception)
         {
@@ -55,4 +64,3 @@ public sealed class JobExecutionService(IJobStore store, IRecognizer recognizer)
 }
 
 public sealed record JobExecutionResult(Guid JobId, JobState State, PipelineResult Pipeline);
-

@@ -11,5 +11,7 @@
     <ProjectReference Include="../../src/OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
     <ProjectReference Include="../../src/OcrWorkbench.PluginHost/OcrWorkbench.PluginHost.csproj" />
     <ProjectReference Include="../../src/OcrWorkbench.Infrastructure/OcrWorkbench.Infrastructure.csproj" />
+    <ProjectReference Include="../../workers/OcrWorkbench.FakeWorker/OcrWorkbench.FakeWorker.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
