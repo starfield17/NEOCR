@@ -2,15 +2,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="OcrWorkbench.Gui.MainWindow"
         x:CompileBindings="False"
-        Title="OCR Workbench"
+        Title="NEOCR"
         Width="860"
         Height="620"
         MinWidth="680"
         MinHeight="500">
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" Margin="24" RowSpacing="12">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" Margin="24" RowSpacing="12">
     <StackPanel Grid.Row="0" Spacing="4">
-      <TextBlock FontSize="28" FontWeight="SemiBold">OCR Workbench</TextBlock>
-      <TextBlock Opacity="0.7">Phase 1 shell · GUI and CLI use the same persisted job service.</TextBlock>
+      <TextBlock FontSize="28" FontWeight="SemiBold">NEOCR</TextBlock>
+      <TextBlock Opacity="0.7">Batch images and macOS Screenshot OCR use the same persisted job service.</TextBlock>
     </StackPanel>
 
     <Grid Grid.Row="1" ColumnDefinitions="150,*" ColumnSpacing="12">
@@ -34,11 +34,15 @@
 
     <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="12">
       <Button x:Name="RunButton" MinWidth="120">Run batch</Button>
+      <Button x:Name="ScreenshotButton" MinWidth="140">Screenshot OCR</Button>
+      <Button x:Name="CopyButton" MinWidth="100" IsEnabled="False">Copy result</Button>
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.8">Ready</TextBlock>
     </StackPanel>
 
+    <TextBlock x:Name="HotkeyText" Grid.Row="5" Opacity="0.65">Screenshot shortcut: unavailable on this platform</TextBlock>
+
     <TextBox x:Name="ResultText"
-             Grid.Row="5"
+             Grid.Row="6"
              IsReadOnly="True"
              AcceptsReturn="True"
              TextWrapping="Wrap"

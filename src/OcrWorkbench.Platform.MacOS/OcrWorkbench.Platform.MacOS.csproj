@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NativeSource>$(MSBuildProjectDirectory)/Native/neocr_macos.mm</NativeSource>
+    <NativeOutput>$(MSBuildProjectDirectory)/obj/native/$(Configuration)/libneocr_macos.dylib</NativeOutput>
+    <BuildMacOSShim Condition="$([MSBuild]::IsOSPlatform('OSX')) and ('$(RuntimeIdentifier)' == '' or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx-')))">true</BuildMacOSShim>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
+  </ItemGroup>
+  <Target Name="BuildMacOSNativeShim"
+          BeforeTargets="CoreCompile"
+          Condition="'$(BuildMacOSShim)' == 'true'">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(NativeOutput)'))" />
+    <Exec Command="xcrun clang++ -std=c++17 -fobjc-arc -dynamiclib -install_name @rpath/libneocr_macos.dylib -mmacosx-version-min=15.2 -arch arm64 -arch x86_64 -framework AppKit -framework Carbon -framework CoreGraphics -framework ImageIO -framework ScreenCaptureKit -framework UniformTypeIdentifiers -o &quot;$(NativeOutput)&quot; &quot;$(NativeSource)&quot;" />
+  </Target>
+  <Target Name="ExposeMacOSNativeShim"
+          BeforeTargets="GetCopyToOutputDirectoryItems"
+          DependsOnTargets="BuildMacOSNativeShim"
+          Condition="'$(BuildMacOSShim)' == 'true'">
+    <ItemGroup>
+      <ContentWithTargetPath Include="$(NativeOutput)"
+                             TargetPath="libneocr_macos.dylib"
+                             CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -11,6 +11,15 @@
     <ProjectReference Include="../OcrWorkbench.Core/OcrWorkbench.Core.csproj" />
     <ProjectReference Include="../OcrWorkbench.Infrastructure/OcrWorkbench.Infrastructure.csproj" />
     <ProjectReference Include="../OcrWorkbench.PluginHost/OcrWorkbench.PluginHost.csproj" />
+    <ProjectReference Include="../OcrWorkbench.Platform.MacOS/OcrWorkbench.Platform.MacOS.csproj"
+                      AdditionalProperties="RuntimeIdentifier=$(RuntimeIdentifier)" />
   </ItemGroup>
+  <Target Name="ExcludeMacOSShimFromOtherPlatformPublish"
+          BeforeTargets="_ComputeResolvedFilesToPublishTypes"
+          Condition="'$(RuntimeIdentifier)' != '' and !$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx-'))">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.RelativePath)' == 'libneocr_macos.dylib'" />
+    </ItemGroup>
+  </Target>
 </Project>
-
