@@ -31,6 +31,7 @@ The commit containing this file is the handoff baseline. macOS Screenshot OCR ma
 - `build/macos/package.sh osx-arm64`: produced an ad-hoc signed bundle; plist, code signature, universal dylib, `@rpath` install name, and GUI launch smoke passed.
 - Clean `win-x64` cross-publish: produced the Windows executable without the macOS dylib.
 - GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04, including the permission-first ABI v2 change.
+- GitHub Actions run `30710134575` at `1669497` passed on macOS 15, Windows 2025, and Ubuntu 24.04, including worker lifecycle integration tests.
 - Worker lifecycle integration tests cover same-process reuse, cooperative cancellation followed by reuse, forced termination and replacement, crash replacement, and invalid-correlation replacement.
 - CLI `Ctrl+C` E2E returned 130, persisted state `Cancelled` (`8`), and left no output artifact.
 
