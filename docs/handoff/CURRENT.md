@@ -27,7 +27,7 @@ The commit containing this file is the handoff baseline. macOS Screenshot OCR im
 - Fake-worker subprocess CLI E2E: completed one input and produced deterministic text.
 - `build/macos/package.sh osx-arm64`: produced an ad-hoc signed bundle; plist, code signature, universal dylib, `@rpath` install name, and GUI launch smoke passed.
 - Clean `win-x64` cross-publish: produced the Windows executable without the macOS dylib.
-- GitHub Actions run `30708367289` at `c4df14c` passed on macOS 15, Windows 2025, and Ubuntu 24.04.
+- GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04, including the permission-first ABI v2 change.
 
 ## Known gaps
 
