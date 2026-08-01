@@ -13,6 +13,7 @@ public sealed class SqliteJobStore(string databasePath) : IJobStore
         DataSource = Path.GetFullPath(databasePath),
         Mode = SqliteOpenMode.ReadWriteCreate,
         Cache = SqliteCacheMode.Shared,
+        Pooling = false,
     }.ToString();
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -136,4 +137,3 @@ public sealed class SqliteJobStore(string databasePath) : IJobStore
     private static DateTimeOffset ParseTimestamp(string timestamp) =>
         DateTimeOffset.Parse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 }
-
