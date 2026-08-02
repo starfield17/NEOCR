@@ -36,6 +36,7 @@ The commit containing this file is the handoff baseline. Milestone 3B is impleme
 - Clean `win-x64` cross-publish produced `OcrWorkbench.Gui.exe` without a macOS dylib.
 - GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for the permission-first ABI v2 change.
 - GitHub Actions run `30710134575` at `1669497` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for worker lifecycle integration tests.
+- GitHub Actions run `30733270865` at `151612e` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for transient checkpoints and pause/resume.
 
 ## Known gaps
 
