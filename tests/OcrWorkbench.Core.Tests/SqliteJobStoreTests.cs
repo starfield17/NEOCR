@@ -32,14 +32,16 @@ public sealed class SqliteJobStoreTests
             Assert.Equal("Host.LegacyJobNotResumable", queued?.ErrorCode);
             Assert.Equal(JobState.Completed, completed?.State);
             Assert.Null(completed?.Recognizer);
-            await using var connection = new SqliteConnection($"Data Source={databasePath}");
-            await connection.OpenAsync();
-            await using var version = connection.CreateCommand();
-            version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(2L, (long)(await version.ExecuteScalarAsync())!);
-            await using var pageTable = connection.CreateCommand();
-            pageTable.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'job_pages';";
-            Assert.Equal(1L, (long)(await pageTable.ExecuteScalarAsync())!);
+            await using (var connection = new SqliteConnection($"Data Source={databasePath}"))
+            {
+                await connection.OpenAsync();
+                await using var version = connection.CreateCommand();
+                version.CommandText = "PRAGMA user_version;";
+                Assert.Equal(2L, (long)(await version.ExecuteScalarAsync())!);
+                await using var pageTable = connection.CreateCommand();
+                pageTable.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'job_pages';";
+                Assert.Equal(1L, (long)(await pageTable.ExecuteScalarAsync())!);
+            }
         }
         finally
         {
