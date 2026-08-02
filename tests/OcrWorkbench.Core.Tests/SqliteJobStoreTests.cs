@@ -32,7 +32,7 @@ public sealed class SqliteJobStoreTests
             Assert.Equal("Host.LegacyJobNotResumable", queued?.ErrorCode);
             Assert.Equal(JobState.Completed, completed?.State);
             Assert.Null(completed?.Recognizer);
-            await using (var connection = new SqliteConnection($"Data Source={databasePath}"))
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
             {
                 await connection.OpenAsync();
                 await using var version = connection.CreateCommand();
@@ -87,7 +87,7 @@ public sealed class SqliteJobStoreTests
         Guid completedId,
         JobSpec spec)
     {
-        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
