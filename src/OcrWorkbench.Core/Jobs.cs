@@ -8,14 +8,55 @@ public sealed record JobRecord(
     JobState State,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
+    RecognizerIdentity? Recognizer = null,
     string? ErrorCode = null,
     string? ErrorMessage = null);
+
+public enum PageCheckpointState
+{
+    Pending = 1,
+    Succeeded = 2,
+    Declined = 3,
+}
+
+public sealed record PageCheckpoint(
+    Guid JobId,
+    int InputIndex,
+    PageArtifact Page,
+    PageCheckpointState State,
+    RecognitionResult? Result = null,
+    string? DeclineReasonCode = null,
+    string? DeclineMessage = null,
+    DateTimeOffset? UpdatedAt = null);
 
 public interface IJobStore
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
-    Task<JobRecord> EnqueueAsync(JobSpec spec, CancellationToken cancellationToken = default);
+    Task<JobRecord> EnqueueAsync(
+        JobSpec spec,
+        RecognizerIdentity recognizer,
+        CancellationToken cancellationToken = default);
     Task<JobRecord?> GetAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PageCheckpoint>> GetPagesAsync(
+        Guid jobId,
+        CancellationToken cancellationToken = default);
+    Task InitializePagesAsync(
+        Guid jobId,
+        IReadOnlyList<PageArtifact> pages,
+        CancellationToken cancellationToken = default);
+    Task<bool> SavePageSucceededAsync(
+        Guid jobId,
+        int inputIndex,
+        string expectedStableId,
+        RecognitionResult result,
+        CancellationToken cancellationToken = default);
+    Task<bool> SavePageDeclinedAsync(
+        Guid jobId,
+        int inputIndex,
+        string expectedStableId,
+        string reasonCode,
+        string message,
+        CancellationToken cancellationToken = default);
     Task<bool> TransitionAsync(
         Guid id,
         JobState expected,
@@ -35,10 +76,19 @@ public static class JobStateMachine
             or JobState.CompletedWithErrors
             or JobState.Failed
             or JobState.Cancelled) => true,
-        (JobState.Pausing, JobState.Paused or JobState.Failed or JobState.Cancelled) => true,
+        (JobState.Pausing, JobState.Paused
+            or JobState.Completed
+            or JobState.CompletedWithErrors
+            or JobState.Failed
+            or JobState.Cancelled) => true,
         (JobState.Paused, JobState.Queued or JobState.Cancelled) => true,
         _ => false,
     };
+
+    public static bool IsTerminal(JobState state) => state is JobState.Completed
+        or JobState.CompletedWithErrors
+        or JobState.Failed
+        or JobState.Cancelled;
 
     public static void EnsureTransition(JobState source, JobState target)
     {
@@ -48,4 +98,3 @@ public static class JobStateMachine
         }
     }
 }
-

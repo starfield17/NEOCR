@@ -17,6 +17,8 @@ public sealed class WorkerRecognizerSession : IRecognizer
         _log = log;
     }
 
+    public RecognizerIdentity Identity => new(_package.Manifest.Id, _package.Manifest.Version);
+
     public async ValueTask<PluginOutcome<RecognitionResult>> RecognizeAsync(
         PageArtifact page,
         RecognitionOptions options,

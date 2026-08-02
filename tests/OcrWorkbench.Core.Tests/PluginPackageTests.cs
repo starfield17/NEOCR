@@ -47,6 +47,31 @@ public sealed class PluginPackageTests
         }
     }
 
+    [Fact]
+    public async Task Rejects_worker_identity_that_does_not_match_manifest()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var source = GetFakeWorkerOutputDirectory();
+            foreach (var file in Directory.EnumerateFiles(source))
+            {
+                File.Copy(file, Path.Combine(directory, Path.GetFileName(file)));
+            }
+
+            await WriteManifestAsync(directory, "OcrWorkbench.FakeWorker.dll", ["any"]);
+            var package = await PluginPackage.LoadAsync(directory);
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() => package.StartRecognizerAsync());
+
+            Assert.Contains("does not match manifest", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task WriteManifestAsync(
         string directory,
         string entrypoint,
@@ -74,5 +99,26 @@ public sealed class PluginPackageTests
         Directory.CreateDirectory(directory);
         return directory;
     }
-}
 
+    private static string GetFakeWorkerOutputDirectory()
+    {
+        var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name ?? "Debug";
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "OcrWorkbench.slnx")))
+            {
+                return Path.Combine(
+                    directory.FullName,
+                    "workers",
+                    "OcrWorkbench.FakeWorker",
+                    "bin",
+                    configuration,
+                    "net10.0");
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the repository root.");
+    }
+}

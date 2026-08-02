@@ -35,6 +35,7 @@
     <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="12">
       <Button x:Name="RunButton" MinWidth="120">Run batch</Button>
       <Button x:Name="ScreenshotButton" MinWidth="140">Screenshot OCR</Button>
+      <Button x:Name="PauseResumeButton" MinWidth="100" IsEnabled="False">Pause</Button>
       <Button x:Name="CancelButton" MinWidth="120" IsEnabled="False">Cancel current task</Button>
       <Button x:Name="CopyButton" MinWidth="100" IsEnabled="False">Copy result</Button>
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.8">Ready</TextBlock>

@@ -35,6 +35,7 @@ public sealed class WorkerProcessRecognizer : IRecognizer
     public string PluginVersion { get; private set; } = string.Empty;
     public IReadOnlyList<string> Capabilities { get; private set; } = [];
     public uint MaximumConcurrency { get; private set; }
+    public RecognizerIdentity Identity => new(PluginId, PluginVersion);
 
     internal bool IsHealthy => Volatile.Read(ref _faulted) == 0
         && Volatile.Read(ref _disposed) == 0

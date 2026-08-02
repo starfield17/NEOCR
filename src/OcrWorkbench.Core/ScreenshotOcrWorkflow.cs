@@ -58,8 +58,10 @@ public sealed class ScreenshotOcrWorkflow(
                     var execution = await new JobExecutionService(jobStore, recognizer)
                         .ExecuteAsync(job, cancellationToken)
                         .ConfigureAwait(false);
+                    var finished = execution as JobExecutionResult.Finished
+                        ?? throw new InvalidOperationException("A screenshot OCR job cannot be paused.");
                     var text = await File.ReadAllTextAsync(outputPath, cancellationToken).ConfigureAwait(false);
-                    return new ScreenshotOcrResult.Succeeded(execution.JobId, execution.State, text);
+                    return new ScreenshotOcrResult.Succeeded(finished.JobId, finished.State, text);
                 default:
                     throw new InvalidOperationException("The screenshot service returned an unknown result.");
             }

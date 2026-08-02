@@ -11,6 +11,8 @@ public sealed record RecognitionOptions(string Language = "auto");
 
 public sealed record PlainTextExportOptions(string OutputPath);
 
+public sealed record RecognizerIdentity(string Id, string Version);
+
 public enum JobState
 {
     Queued = 1,

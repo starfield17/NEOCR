@@ -37,6 +37,8 @@ public sealed class OcrPipelineTests
 
     private sealed class StubRecognizer(string declinedPath) : IRecognizer
     {
+        public RecognizerIdentity Identity { get; } = new("org.ocrworkbench.test", "1.0.0");
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
         public ValueTask<PluginOutcome<RecognitionResult>> RecognizeAsync(
@@ -60,4 +62,3 @@ public sealed class OcrPipelineTests
         }
     }
 }
-

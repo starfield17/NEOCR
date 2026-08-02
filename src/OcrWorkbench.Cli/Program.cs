@@ -36,7 +36,9 @@ static async Task<int> RunAsync(string[] args)
             cancellation.Token);
         var execution = await new JobExecutionService(store, recognizer)
             .ExecuteAsync(job, cancellation.Token);
-        var result = execution.Pipeline;
+        var finished = execution as JobExecutionResult.Finished
+            ?? throw new InvalidOperationException("CLI jobs cannot be paused.");
+        var result = finished.Pipeline;
 
         if (options.Json)
         {
@@ -45,7 +47,7 @@ static async Task<int> RunAsync(string[] args)
         else
         {
             Console.WriteLine($"Completed {result.Completed.Count} image(s); declined {result.Declined.Count}.");
-            Console.WriteLine($"Job: {execution.JobId:D}");
+            Console.WriteLine($"Job: {finished.JobId:D}");
             Console.WriteLine(result.OutputPath);
         }
 

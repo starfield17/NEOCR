@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using OcrWorkbench.Contracts;
 
 namespace OcrWorkbench.Core;
@@ -17,16 +15,10 @@ public sealed class OcrPipeline(IRecognizer recognizer)
         var completed = new List<PageRecognition>(job.Inputs.Count);
         var declined = new List<PageDecline>();
 
-        foreach (var input in job.Inputs)
+        for (var inputIndex = 0; inputIndex < job.Inputs.Count; inputIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var fullPath = Path.GetFullPath(input.Path);
-            if (!File.Exists(fullPath))
-            {
-                throw new FileNotFoundException("Input image does not exist.", fullPath);
-            }
-
-            var page = new PageArtifact(CreateStableId(fullPath), fullPath, input.MimeType);
+            var page = PageArtifactFactory.Create(job.Inputs[inputIndex], inputIndex);
             var outcome = await recognizer.RecognizeAsync(page, job.Recognition, cancellationToken).ConfigureAwait(false);
             switch (outcome)
             {
@@ -48,13 +40,6 @@ public sealed class OcrPipeline(IRecognizer recognizer)
 
         return new PipelineResult(completed, declined, Path.GetFullPath(job.Export.OutputPath));
     }
-
-    private static string CreateStableId(string fullPath)
-    {
-        var file = new FileInfo(fullPath);
-        var identity = $"{fullPath}\n{file.Length}\n{file.LastWriteTimeUtc.Ticks}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
-    }
 }
 
 public sealed record PageDecline(PageArtifact Page, string ReasonCode, string Message);
@@ -69,4 +54,3 @@ public sealed class RecognitionException(string code, string message, bool retry
     public string Code { get; } = code;
     public bool Retryable { get; } = retryable;
 }
-

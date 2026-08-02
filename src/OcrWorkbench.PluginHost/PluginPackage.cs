@@ -64,7 +64,7 @@ public sealed partial class PluginPackage
     {
         EnsureRecognizer();
 
-        return WorkerProcessRecognizer.StartAsync(EntrypointPath, log, cancellationToken);
+        return StartAndValidateRecognizerAsync(log, cancellationToken);
     }
 
     public WorkerRecognizerSession CreateRecognizerSession(Action<string>? log = null)
@@ -79,6 +79,24 @@ public sealed partial class PluginPackage
         {
             throw new InvalidOperationException($"Plugin '{Manifest.Id}' is not a recognizer.");
         }
+    }
+
+    private async Task<WorkerProcessRecognizer> StartAndValidateRecognizerAsync(
+        Action<string>? log,
+        CancellationToken cancellationToken)
+    {
+        var recognizer = await WorkerProcessRecognizer
+            .StartAsync(EntrypointPath, log, cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(recognizer.PluginId, Manifest.Id, StringComparison.Ordinal)
+            || !string.Equals(recognizer.PluginVersion, Manifest.Version, StringComparison.Ordinal))
+        {
+            await recognizer.DisposeAsync().ConfigureAwait(false);
+            throw new InvalidDataException(
+                $"Worker identity '{recognizer.PluginId}@{recognizer.PluginVersion}' does not match manifest '{Manifest.Id}@{Manifest.Version}'.");
+        }
+
+        return recognizer;
     }
 
     private static void ValidateManifest(PluginManifest manifest)

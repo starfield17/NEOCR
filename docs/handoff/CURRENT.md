@@ -2,48 +2,50 @@
 
 Updated: 2026-08-02 (Asia/Shanghai)
 
-The commit containing this file is the handoff baseline. macOS Screenshot OCR manual QA passed. Worker lifecycle milestone 3A is implemented on `feature/worker-lifecycle`, stacked on `feature/macos-screenshot`.
+The commit containing this file is the handoff baseline. Milestone 3B is implemented on `feature/job-checkpoints`, stacked on `feature/worker-lifecycle`. macOS Screenshot OCR manual QA passed.
 
 ## Working capabilities
 
-- .NET 10 solution with shared Contracts/Core.
-- SQLite WAL job persistence with compare-and-swap state transitions.
-- Out-of-process, framed Protobuf recognizer protocol and package validation.
-- Batch-image CLI and Avalonia GUI using the same `JobExecutionService`.
-- Atomic plain-text export and deterministic fake worker.
+- .NET 10 solution with shared Contracts/Core and one kernel used by the Avalonia GUI and image-batch CLI.
+- SQLite WAL job persistence at schema version 2 with compare-and-swap state transitions.
+- Jobs bind to the exact recognizer package ID and version accepted by the worker handshake.
+- Page input snapshots and transient SQLite checkpoints preserve successful and declined OCR results while a job is `Running`, `Pausing`, or `Paused`.
+- The serial runner pauses only between pages, resumes without repeating checkpointed pages, validates all input snapshots before resume, and lets final-page completion/export win over a late pause request.
+- `Completed`, `CompletedWithErrors`, `Failed`, and `Cancelled` transitions delete all page checkpoint content in the same database transaction. SQLite is not permanent OCR history.
+- Existing schema-v1 nonterminal jobs migrate to explicit `Failed` records with `Host.LegacyJobNotResumable`; existing terminal records remain intact.
+- Current-batch GUI Pause/Resume and Cancel controls. A paused task blocks new batch and screenshot operations; closing the GUI cancels and cleans that paused task.
+- Out-of-process, framed Protobuf recognizer protocol, package validation, deterministic fake worker, atomic plain-text export, and correlated worker logging.
+- App-lifetime GUI recognizer sessions reuse one healthy single-flight worker. Cooperative cancellation drains its correlated response; unhealthy workers are terminated and replaced on the next operation without retrying the failed task.
 - Core ports for registered hotkeys and interactive screenshots.
 - macOS 15.2 Objective-C++ adapter using Carbon hotkey registration, AppKit selection overlays, and ScreenCaptureKit region capture.
-- Screenshot OCR GUI action, `Control+Option+O`, persisted plugin location, result copy, one-operation gating, and temporary screenshot cleanup.
+- Screenshot OCR GUI action, `Control+Option+O`, permission-first flow, persisted plugin location, result copy, one-operation gating, and temporary screenshot cleanup.
 - Universal arm64/x86_64 native dylib and an ad-hoc signed `.app` packaging path.
-- Explicit Screen Recording permission port and macOS ABI v2; Screenshot OCR requests access before validating the recognizer package.
-- Correlation-routed stdout, serialized frame writes, cooperative cancellation drain, and a two-second forced-termination fallback.
-- App-lifetime GUI recognizer sessions reuse one healthy single-flight worker across batch and screenshot OCR; failed workers are replaced on the next operation without retrying the failed task.
-- GUI cancellation, app-wide operation gating, deterministic shutdown, and CLI `Ctrl+C` exit code 130.
+- GUI cancellation and deterministic shutdown; CLI `Ctrl+C` exits 130.
 - Architecture/continuity documentation and dependency/link guards.
 
 ## Verification baseline
 
 - `dotnet build OcrWorkbench.slnx --no-restore`: passed with zero warnings and errors.
-- `dotnet test OcrWorkbench.slnx --no-build --verbosity minimal`: 29 passed (26 Core, 3 architecture/native ABI).
+- `dotnet test OcrWorkbench.slnx --no-build --verbosity minimal`: 40 passed (37 Core, 3 architecture/native ABI).
 - `dotnet format OcrWorkbench.slnx --no-restore --verify-no-changes`: passed.
 - `dotnet list OcrWorkbench.slnx package --vulnerable --include-transitive`: no known vulnerable packages.
-- Fake-worker subprocess CLI E2E: completed one input and produced deterministic text.
-- `build/macos/package.sh osx-arm64`: produced an ad-hoc signed bundle; plist, code signature, universal dylib, `@rpath` install name, and GUI launch smoke passed.
-- Clean `win-x64` cross-publish: produced the Windows executable without the macOS dylib.
-- GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04, including the permission-first ABI v2 change.
-- GitHub Actions run `30710134575` at `1669497` passed on macOS 15, Windows 2025, and Ubuntu 24.04, including worker lifecycle integration tests.
-- Worker lifecycle integration tests cover same-process reuse, cooperative cancellation followed by reuse, forced termination and replacement, crash replacement, and invalid-correlation replacement.
-- CLI `Ctrl+C` E2E returned 130, persisted state `Cancelled` (`8`), and left no output artifact.
+- Checkpoint tests cover pre-claim cancellation, pause before page initialization, cross-store pause/resume, no repeated successful or declined pages, final-page pause precedence, changed-input failure, recognizer mismatch, failure/cancellation cleanup, legacy schema migration, and worker-manifest/handshake mismatch.
+- Fake-worker subprocess CLI E2E completed one input, persisted schema v2 and recognizer identity, exported deterministic text, and retained zero terminal page rows.
+- CLI pseudo-terminal `Ctrl+C` E2E returned 130, persisted state `Cancelled` (`8`), retained zero page rows, and left no output artifact.
+- `build/macos/package.sh osx-arm64` produced an ad-hoc signed bundle; plist identity, deep code signature, universal dylib, `@rpath` install name, and GUI launch/quit smoke passed.
+- Clean `win-x64` cross-publish produced `OcrWorkbench.Gui.exe` without a macOS dylib.
+- GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for the permission-first ABI v2 change.
+- GitHub Actions run `30710134575` at `1669497` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for worker lifecycle integration tests.
 
 ## Known gaps
 
 - No production OCR worker/model package exists yet.
-- Jobs have no page checkpoints, pause/resume runner, or restart recovery.
+- There is no startup reconciliation for jobs abandoned in `Running` or `Pausing`, and no historical/paused task browser. The Core runner can resume a known persisted paused job ID, but the current GUI deliberately cancels its paused task on close.
 - Worker reuse is single-flight and has no idle timeout or manual unload control.
 - A worker crash fails the current task; replacement is lazy on the next operation and there is no automatic page retry.
 - Document sources/exporters and VLM providers are contracts/roadmap only.
-- Windows and Linux platform adapters are not implemented.
+- Windows and Linux hotkey/capture adapters are not implemented.
 
 ## Next bounded task
 
-Begin milestone 3B with page checkpoint persistence and a resumable runner. Define the SQLite migration and page identity/result records before adding GUI pause/resume controls or abandoned-job recovery.
+Begin milestone 3C with startup reconciliation and persisted task discovery. Define deterministic handling for abandoned `Running`/`Pausing` jobs before adding a GUI task list or changing the current close-cancels-paused policy.

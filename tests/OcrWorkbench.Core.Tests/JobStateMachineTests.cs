@@ -8,6 +8,7 @@ public sealed class JobStateMachineTests
     [InlineData(JobState.Queued, JobState.Running)]
     [InlineData(JobState.Running, JobState.Pausing)]
     [InlineData(JobState.Pausing, JobState.Paused)]
+    [InlineData(JobState.Pausing, JobState.Completed)]
     [InlineData(JobState.Paused, JobState.Queued)]
     [InlineData(JobState.Running, JobState.CompletedWithErrors)]
     public void AcceptsSupportedTransitions(JobState source, JobState target)
@@ -25,4 +26,3 @@ public sealed class JobStateMachineTests
         Assert.Throws<InvalidOperationException>(() => JobStateMachine.EnsureTransition(source, target));
     }
 }
-

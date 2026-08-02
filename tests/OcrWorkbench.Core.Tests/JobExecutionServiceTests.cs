@@ -30,6 +30,7 @@ public sealed class JobExecutionServiceTests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
             Assert.Equal(JobState.Cancelled, Assert.Single(store.Jobs.Values).State);
+            Assert.Empty(store.Pages);
             Assert.Equal("existing output", await File.ReadAllTextAsync(output));
         }
         finally
@@ -40,6 +41,8 @@ public sealed class JobExecutionServiceTests
 
     private sealed class BlockingRecognizer : IRecognizer
     {
+        public RecognizerIdentity Identity { get; } = new("org.ocrworkbench.test", "1.0.0");
+
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -55,45 +58,4 @@ public sealed class JobExecutionServiceTests
         }
     }
 
-    private sealed class MemoryJobStore : IJobStore
-    {
-        public Dictionary<Guid, JobRecord> Jobs { get; } = [];
-
-        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<JobRecord> EnqueueAsync(JobSpec spec, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var now = DateTimeOffset.UtcNow;
-            var record = new JobRecord(Guid.NewGuid(), spec, JobState.Queued, now, now);
-            Jobs.Add(record.Id, record);
-            return Task.FromResult(record);
-        }
-
-        public Task<JobRecord?> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Jobs.GetValueOrDefault(id));
-
-        public Task<bool> TransitionAsync(
-            Guid id,
-            JobState expected,
-            JobState target,
-            string? errorCode = null,
-            string? errorMessage = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (!Jobs.TryGetValue(id, out var record) || record.State != expected)
-            {
-                return Task.FromResult(false);
-            }
-
-            Jobs[id] = record with
-            {
-                State = target,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                ErrorCode = errorCode,
-                ErrorMessage = errorMessage,
-            };
-            return Task.FromResult(true);
-        }
-    }
 }
