@@ -24,7 +24,7 @@ public sealed class PluginPackageTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            await DeleteTemporaryDirectoryAsync(directory);
         }
     }
 
@@ -43,7 +43,7 @@ public sealed class PluginPackageTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            await DeleteTemporaryDirectoryAsync(directory);
         }
     }
 
@@ -68,7 +68,7 @@ public sealed class PluginPackageTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            await DeleteTemporaryDirectoryAsync(directory);
         }
     }
 
@@ -98,6 +98,23 @@ public sealed class PluginPackageTests
         var directory = Path.Combine(Path.GetTempPath(), $"ocr-workbench-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         return directory;
+    }
+
+    private static async Task DeleteTemporaryDirectoryAsync(string directory)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+                return;
+            }
+            catch (Exception exception) when (
+                attempt < 20 && exception is IOException or UnauthorizedAccessException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
+            }
+        }
     }
 
     private static string GetFakeWorkerOutputDirectory()
