@@ -4,10 +4,10 @@
         x:CompileBindings="False"
         Title="NEOCR"
         Width="860"
-        Height="620"
+        Height="680"
         MinWidth="680"
         MinHeight="500">
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" Margin="24" RowSpacing="12">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*" Margin="24" RowSpacing="12">
     <StackPanel Grid.Row="0" Spacing="4">
       <TextBlock FontSize="28" FontWeight="SemiBold">NEOCR</TextBlock>
       <TextBlock Opacity="0.7">Batch images and macOS Screenshot OCR use the same persisted job service.</TextBlock>
@@ -41,10 +41,18 @@
       <TextBlock x:Name="StatusText" VerticalAlignment="Center" Opacity="0.8">Ready</TextBlock>
     </StackPanel>
 
-    <TextBlock x:Name="HotkeyText" Grid.Row="5" Opacity="0.65">Screenshot shortcut: unavailable on this platform</TextBlock>
+    <Grid Grid.Row="5" ColumnDefinitions="150,*,Auto,Auto,Auto" ColumnSpacing="8">
+      <TextBlock VerticalAlignment="Center">Paused tasks</TextBlock>
+      <ComboBox x:Name="PausedJobs" Grid.Column="1" PlaceholderText="No paused tasks" />
+      <Button x:Name="RefreshJobsButton" Grid.Column="2">Refresh</Button>
+      <Button x:Name="ResumeSelectedButton" Grid.Column="3" IsEnabled="False">Resume</Button>
+      <Button x:Name="CancelSelectedButton" Grid.Column="4" IsEnabled="False">Cancel</Button>
+    </Grid>
+
+    <TextBlock x:Name="HotkeyText" Grid.Row="6" Opacity="0.65">Screenshot shortcut: unavailable on this platform</TextBlock>
 
     <TextBox x:Name="ResultText"
-             Grid.Row="6"
+             Grid.Row="7"
              IsReadOnly="True"
              AcceptsReturn="True"
              TextWrapping="Wrap"

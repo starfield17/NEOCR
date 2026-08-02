@@ -33,10 +33,10 @@ Platform APIs are exposed to the application as ports owned by Core. macOS, Wind
 ### Image and screenshot OCR
 
 1. A composition root constructs a `JobSpec` containing file-backed image inputs, recognition options, and an export target.
-2. `JobExecutionService` persists the queued job with its recognizer identity and claims it with a compare-and-swap state transition.
+2. `JobExecutionService` persists the queued job with its recognizer identity and claims it with a unique run ID and renewable lease.
 3. The runner snapshots every input, skips valid succeeded/declined checkpoints, and asks an `IRecognizer` to process each pending page.
 4. The plugin host reuses a healthy single-flight worker, sends a protocol-v1 request, and maps the correlated reply to succeeded, declined, or failed.
-5. Each page outcome is committed before the next page. A pause request takes effect at that boundary.
+5. Each page outcome is committed before the next page and fenced by the current run ID. A pause request takes effect at that boundary.
 6. The exporter atomically replaces the output file from ordered checkpoints, then the terminal state transition deletes the temporary page results in the same database transaction.
 
 Interactive screenshots are intentionally ephemeral: the platform adapter returns PNG bytes, the GUI workflow writes a private temporary input, submits the normal job, reads the text result, and removes both temporary files. SQLite never stores pixels. It may temporarily store recognized text and geometry while a job is non-terminal, then removes them at a terminal transition.
@@ -49,7 +49,7 @@ The target document flow is `document source -> ordered PageArtifact stream -> r
 
 Jobs use explicit compare-and-swap transitions: queued, running, pausing, paused, completed, completed-with-errors, failed, or cancelled. Caller cancellation moves a running job to `cancelled` after the worker response stream is safe to reuse or the worker has been terminated. Batch pause finishes the active page, commits it, then moves `pausing` to `paused`; if the final page finished, completion and export win the race.
 
-SQLite schema v2 records recognizer identity and ordered page snapshots with pending, succeeded or declined outcomes. Resume requires the same recognizer ID/version and unchanged file identity. Completed, completed-with-errors, failed and cancelled transitions delete page-result JSON. Startup reconciliation of abandoned `running`/`pausing` jobs and historical paused-job selection remain roadmap work.
+SQLite schema v3 records recognizer identity, ordered page snapshots, and the current run ID/lease expiry. Resume requires the same recognizer ID/version and unchanged file identity. Every running-state mutation is fenced by the run ID and a live lease. Explicit startup reconciliation moves only expired or pre-v3 lease-less `running`/`pausing` jobs to `paused`, preserving their checkpoints; a late former owner cannot write checkpoints or state. Completed, completed-with-errors, failed and cancelled transitions delete page-result JSON.
 
 Recognizer cancellation is cooperative first: the worker acknowledges a separately correlated cancel request and emits a terminal response for the target request. The host drains both responses before reuse and terminates an unresponsive process after two seconds. Worker crashes and protocol faults fail the current task without an implicit retry; a later task starts a replacement process.
 

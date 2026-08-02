@@ -2,7 +2,7 @@
 
 1. **Foundation — complete:** contracts, SQLite job state, worker protocol, fake recognizer, CLI, and GUI shell.
 2. **macOS Screenshot OCR — complete:** registered shortcut, interactive region capture, normal OCR job submission, display/copy, cleanup, platform runbook, and manual QA.
-3. **Worker lifecycle and recovery — in progress:** persistent worker reuse, correlation-safe cancellation, transient page checkpoints, a resumable runner, and current-batch GUI pause/resume are implemented; abandoned-job startup recovery and historical task selection remain.
+3. **Worker lifecycle and recovery — complete:** persistent worker reuse, correlation-safe cancellation, transient page checkpoints, leased/fenced runners, deterministic abandoned-job recovery, and persisted task discovery/resume/cancellation in GUI and CLI.
 4. **First-party Paddle distribution:** independently versioned worker, runtime, model inventory, CPU baseline, then CUDA/Vulkan-capable packages where the runtime supports them.
 5. **Document OCR:** document-source workers for PDF, XPS, EPUB, MOBI, FB2, and CBZ; ordered pages, selectable extraction modes, searchable/exported documents, and separate document-engine licensing.
 6. **VLM APIs:** provider adapters, secret storage, prompt recipes, structured decline/fallback policy, rate-limit handling, and no first-party local VLM inference.

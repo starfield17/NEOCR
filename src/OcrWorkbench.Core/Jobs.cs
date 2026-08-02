@@ -10,7 +10,11 @@ public sealed record JobRecord(
     DateTimeOffset UpdatedAt,
     RecognizerIdentity? Recognizer = null,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    Guid? RunId = null,
+    DateTimeOffset? LeaseExpiresAt = null);
+
+public sealed record JobRunLease(Guid JobId, Guid RunId, DateTimeOffset ExpiresAt);
 
 public enum PageCheckpointState
 {
@@ -37,21 +41,45 @@ public interface IJobStore
         RecognizerIdentity recognizer,
         CancellationToken cancellationToken = default);
     Task<JobRecord?> GetAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<JobRecord>> ListAsync(
+        JobState state,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> ReconcileAbandonedAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+    Task<JobRunLease?> TryClaimAsync(
+        Guid jobId,
+        Guid runId,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
+    Task<bool> RenewLeaseAsync(
+        Guid jobId,
+        Guid runId,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PageCheckpoint>> GetPagesAsync(
         Guid jobId,
         CancellationToken cancellationToken = default);
     Task InitializePagesAsync(
         Guid jobId,
+        Guid runId,
+        DateTimeOffset now,
         IReadOnlyList<PageArtifact> pages,
         CancellationToken cancellationToken = default);
     Task<bool> SavePageSucceededAsync(
         Guid jobId,
+        Guid runId,
+        DateTimeOffset now,
         int inputIndex,
         string expectedStableId,
         RecognitionResult result,
         CancellationToken cancellationToken = default);
     Task<bool> SavePageDeclinedAsync(
         Guid jobId,
+        Guid runId,
+        DateTimeOffset now,
         int inputIndex,
         string expectedStableId,
         string reasonCode,
@@ -64,6 +92,43 @@ public interface IJobStore
         string? errorCode = null,
         string? errorMessage = null,
         CancellationToken cancellationToken = default);
+    Task<bool> TransitionOwnedAsync(
+        Guid id,
+        Guid runId,
+        DateTimeOffset now,
+        JobState expected,
+        JobState target,
+        string? errorCode = null,
+        string? errorMessage = null,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class JobRecoveryService(IJobStore store, TimeProvider? timeProvider = null)
+{
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    public Task<IReadOnlyList<Guid>> ReconcileAbandonedAsync(
+        CancellationToken cancellationToken = default) =>
+        store.ReconcileAbandonedAsync(_timeProvider.GetUtcNow(), cancellationToken);
+
+    public Task<IReadOnlyList<JobRecord>> ListPausedAsync(
+        CancellationToken cancellationToken = default) =>
+        store.ListAsync(JobState.Paused, cancellationToken);
+
+    public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        var job = await store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        return job?.State switch
+        {
+            JobState.Queued => await store.TransitionAsync(
+                jobId, JobState.Queued, JobState.Cancelled,
+                cancellationToken: cancellationToken).ConfigureAwait(false),
+            JobState.Paused => await store.TransitionAsync(
+                jobId, JobState.Paused, JobState.Cancelled,
+                cancellationToken: cancellationToken).ConfigureAwait(false),
+            _ => false,
+        };
+    }
 }
 
 public static class JobStateMachine

@@ -22,6 +22,10 @@ public sealed partial class MainWindow : Window
     private readonly Button _pauseResumeButton;
     private readonly Button _cancelButton;
     private readonly Button _copyButton;
+    private readonly ComboBox _pausedJobs;
+    private readonly Button _refreshJobsButton;
+    private readonly Button _resumeSelectedButton;
+    private readonly Button _cancelSelectedButton;
     private readonly TextBlock _statusText;
     private readonly TextBlock _hotkeyText;
     private readonly TextBox _resultText;
@@ -35,7 +39,6 @@ public sealed partial class MainWindow : Window
     private string? _recognizerDirectory;
     private JobExecutionService? _activeExecutionService;
     private Guid? _activeJobId;
-    private Guid? _pausedJobId;
     private bool _closing;
     private bool _shutdownCompleted;
 
@@ -50,6 +53,10 @@ public sealed partial class MainWindow : Window
         _pauseResumeButton = this.FindControl<Button>("PauseResumeButton")!;
         _cancelButton = this.FindControl<Button>("CancelButton")!;
         _copyButton = this.FindControl<Button>("CopyButton")!;
+        _pausedJobs = this.FindControl<ComboBox>("PausedJobs")!;
+        _refreshJobsButton = this.FindControl<Button>("RefreshJobsButton")!;
+        _resumeSelectedButton = this.FindControl<Button>("ResumeSelectedButton")!;
+        _cancelSelectedButton = this.FindControl<Button>("CancelSelectedButton")!;
         _statusText = this.FindControl<TextBlock>("StatusText")!;
         _hotkeyText = this.FindControl<TextBlock>("HotkeyText")!;
         _resultText = this.FindControl<TextBox>("ResultText")!;
@@ -58,7 +65,12 @@ public sealed partial class MainWindow : Window
         _pauseResumeButton.Click += PauseResumeClickedAsync;
         _cancelButton.Click += CancelClickedAsync;
         _copyButton.Click += CopyClickedAsync;
+        _pausedJobs.SelectionChanged += PausedJobSelectionChanged;
+        _refreshJobsButton.Click += RefreshJobsClickedAsync;
+        _resumeSelectedButton.Click += ResumeSelectedClickedAsync;
+        _cancelSelectedButton.Click += CancelSelectedClickedAsync;
         Closing += WindowClosingAsync;
+        Opened += WindowOpenedAsync;
 
         if (OperatingSystem.IsMacOSVersionAtLeast(15, 2))
         {
@@ -67,7 +79,6 @@ public sealed partial class MainWindow : Window
             _screenCapturePermissionService = screenshotService;
             _hotkeyService = new MacOSGlobalHotkeyService();
             _hotkeyService.Pressed += HotkeyPressed;
-            Opened += WindowOpenedAsync;
             _hotkeyText.Text = "Screenshot shortcut: Control+Option+O";
         }
         else
@@ -119,7 +130,6 @@ public sealed partial class MainWindow : Window
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
         {
-            _pausedJobId = null;
             _statusText.Text = "Cancelled.";
             _resultText.Text = string.Empty;
         }
@@ -146,11 +156,23 @@ public sealed partial class MainWindow : Window
                 _pluginDirectory.Text = settings.PluginDirectory;
             }
 
-            await _hotkeyService!.RegisterAsync(HotkeyGesture.DefaultScreenshot);
+            var store = new SqliteJobStore(GetDefaultDatabasePath());
+            await store.InitializeAsync();
+            var recovered = await new JobRecoveryService(store).ReconcileAbandonedAsync();
+            await RefreshPausedJobsAsync(store);
+            if (recovered.Count > 0)
+            {
+                _statusText.Text = $"Recovered {recovered.Count} interrupted task(s).";
+            }
+
+            if (_hotkeyService is not null)
+            {
+                await _hotkeyService.RegisterAsync(HotkeyGesture.DefaultScreenshot);
+            }
         }
         catch (Exception exception)
         {
-            _statusText.Text = $"Shortcut unavailable: {exception.Message}";
+            _statusText.Text = $"Startup failed: {exception.Message}";
         }
     }
 
@@ -177,14 +199,6 @@ public sealed partial class MainWindow : Window
         await _operationGate.WaitAsync();
         try
         {
-            if (_pausedJobId is { } pausedJobId && _recognizerSession is not null)
-            {
-                var store = new SqliteJobStore(GetDefaultDatabasePath());
-                await store.InitializeAsync();
-                await new JobExecutionService(store, _recognizerSession).CancelAsync(pausedJobId);
-                _pausedJobId = null;
-            }
-
             if (_recognizerSession is not null)
             {
                 await _recognizerSession.DisposeAsync();
@@ -327,17 +341,12 @@ public sealed partial class MainWindow : Window
 
                 return;
             }
-
-            if (_pausedJobId is not null)
-            {
-                await ResumeBatchAsync();
-            }
         }
         catch (Exception exception)
         {
             _statusText.Text = "Pause request failed.";
             _resultText.Text = exception.Message;
-            _pauseResumeButton.IsEnabled = _activeJobId is not null || _pausedJobId is not null;
+            _pauseResumeButton.IsEnabled = _activeJobId is not null;
         }
     }
 
@@ -351,38 +360,11 @@ public sealed partial class MainWindow : Window
             _activeOperation.Cancel();
             return;
         }
-
-        if (_pausedJobId is not { } pausedJobId || _recognizerSession is null)
-        {
-            return;
-        }
-
-        _cancelButton.IsEnabled = false;
-        _pauseResumeButton.IsEnabled = false;
-        try
-        {
-            var store = new SqliteJobStore(GetDefaultDatabasePath());
-            await store.InitializeAsync();
-            if (await new JobExecutionService(store, _recognizerSession).CancelAsync(pausedJobId))
-            {
-                _pausedJobId = null;
-                _statusText.Text = "Cancelled.";
-            }
-        }
-        catch (Exception exception)
-        {
-            _statusText.Text = "Cancel failed.";
-            _resultText.Text = exception.Message;
-        }
-        finally
-        {
-            UpdateIdleControls();
-        }
     }
 
     private CancellationTokenSource? BeginOperation()
     {
-        if (_closing || _pausedJobId is not null || !_operationGate.Wait(0))
+        if (_closing || !_operationGate.Wait(0))
         {
             return null;
         }
@@ -393,6 +375,9 @@ public sealed partial class MainWindow : Window
         _screenshotButton.IsEnabled = false;
         _pauseResumeButton.IsEnabled = false;
         _cancelButton.IsEnabled = true;
+        _refreshJobsButton.IsEnabled = false;
+        _resumeSelectedButton.IsEnabled = false;
+        _cancelSelectedButton.IsEnabled = false;
         return operation;
     }
 
@@ -408,16 +393,15 @@ public sealed partial class MainWindow : Window
         _operationGate.Release();
     }
 
-    private async Task ResumeBatchAsync()
+    private async Task ResumeBatchAsync(Guid pausedJobId)
     {
-        if (_pausedJobId is not { } pausedJobId
-            || string.IsNullOrWhiteSpace(_pluginDirectory.Text))
+        if (string.IsNullOrWhiteSpace(_pluginDirectory.Text))
         {
             _statusText.Text = "The paused job requires its recognizer plugin.";
             return;
         }
 
-        var operation = BeginPausedOperation();
+        var operation = BeginOperation();
         if (operation is null)
         {
             return;
@@ -441,21 +425,11 @@ public sealed partial class MainWindow : Window
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
         {
-            _pausedJobId = null;
             _statusText.Text = "Cancelled.";
             _resultText.Text = string.Empty;
         }
         catch (Exception exception)
         {
-            if (store is not null && (await store.GetAsync(pausedJobId))?.State == JobState.Paused)
-            {
-                _pausedJobId = pausedJobId;
-            }
-            else
-            {
-                _pausedJobId = null;
-            }
-
             _statusText.Text = "Resume failed.";
             _resultText.Text = exception.Message;
         }
@@ -463,21 +437,18 @@ public sealed partial class MainWindow : Window
         {
             _activeExecutionService = null;
             _activeJobId = null;
-            EndOperation(operation);
+            try
+            {
+                if (store is not null)
+                {
+                    await RefreshPausedJobsAsync(store);
+                }
+            }
+            finally
+            {
+                EndOperation(operation);
+            }
         }
-    }
-
-    private CancellationTokenSource? BeginPausedOperation()
-    {
-        var pausedJobId = _pausedJobId;
-        _pausedJobId = null;
-        var operation = BeginOperation();
-        if (operation is null)
-        {
-            _pausedJobId = pausedJobId;
-        }
-
-        return operation;
     }
 
     private async Task PresentBatchResultAsync(JobExecutionResult execution)
@@ -485,26 +456,131 @@ public sealed partial class MainWindow : Window
         switch (execution)
         {
             case JobExecutionResult.Finished finished:
-                _pausedJobId = null;
                 _resultText.Text = await File.ReadAllTextAsync(finished.Pipeline.OutputPath);
                 _copyButton.IsEnabled = !string.IsNullOrEmpty(_resultText.Text);
                 _statusText.Text = $"{finished.State} · {finished.JobId:D}";
                 break;
             case JobExecutionResult.Paused paused:
-                _pausedJobId = paused.JobId;
                 _statusText.Text = $"Paused · {paused.CompletedPages}/{paused.TotalPages} pages · {paused.JobId:D}";
                 break;
         }
+
+        var store = new SqliteJobStore(GetDefaultDatabasePath());
+        await store.InitializeAsync();
+        await RefreshPausedJobsAsync(store);
     }
 
     private void UpdateIdleControls()
     {
-        var paused = _pausedJobId is not null;
-        _runButton.IsEnabled = !_closing && !paused;
-        _screenshotButton.IsEnabled = !_closing && !paused && _screenshotService is not null;
-        _pauseResumeButton.Content = paused ? "Resume" : "Pause";
-        _pauseResumeButton.IsEnabled = !_closing && paused;
-        _cancelButton.IsEnabled = !_closing && paused;
+        _runButton.IsEnabled = !_closing;
+        _screenshotButton.IsEnabled = !_closing && _screenshotService is not null;
+        _pauseResumeButton.Content = "Pause";
+        _pauseResumeButton.IsEnabled = false;
+        _cancelButton.IsEnabled = false;
+        _refreshJobsButton.IsEnabled = !_closing;
+        UpdateSelectedJobControls();
+    }
+
+    private void PausedJobSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs) =>
+        UpdateSelectedJobControls();
+
+    private async void RefreshJobsClickedAsync(object? sender, RoutedEventArgs eventArgs)
+    {
+        try
+        {
+            var store = new SqliteJobStore(GetDefaultDatabasePath());
+            await store.InitializeAsync();
+            var recovered = await new JobRecoveryService(store).ReconcileAbandonedAsync();
+            await RefreshPausedJobsAsync(store);
+            _statusText.Text = recovered.Count == 0
+                ? "Paused tasks refreshed."
+                : $"Recovered {recovered.Count} interrupted task(s).";
+        }
+        catch (Exception exception)
+        {
+            _statusText.Text = "Task refresh failed.";
+            _resultText.Text = exception.Message;
+        }
+    }
+
+    private async void ResumeSelectedClickedAsync(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (_pausedJobs.SelectedItem is PausedJobItem selected)
+        {
+            await ResumeBatchAsync(selected.Id);
+        }
+    }
+
+    private async void CancelSelectedClickedAsync(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (_pausedJobs.SelectedItem is not PausedJobItem selected)
+        {
+            return;
+        }
+
+        var operation = BeginOperation();
+        if (operation is null)
+        {
+            _statusText.Text = "Another OCR operation is already active.";
+            return;
+        }
+
+        _cancelButton.IsEnabled = false;
+        try
+        {
+            var store = new SqliteJobStore(GetDefaultDatabasePath());
+            await store.InitializeAsync(operation.Token);
+            if (!await new JobRecoveryService(store).CancelAsync(selected.Id, operation.Token))
+            {
+                throw new InvalidOperationException($"Task '{selected.Id}' is no longer paused.");
+            }
+
+            _statusText.Text = $"Cancelled · {selected.Id:D}";
+            await RefreshPausedJobsAsync(store);
+        }
+        catch (Exception exception)
+        {
+            _statusText.Text = "Cancel failed.";
+            _resultText.Text = exception.Message;
+        }
+        finally
+        {
+            EndOperation(operation);
+        }
+    }
+
+    private async Task RefreshPausedJobsAsync(
+        SqliteJobStore store,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedId = (_pausedJobs.SelectedItem as PausedJobItem)?.Id;
+        var jobs = await new JobRecoveryService(store).ListPausedAsync(cancellationToken);
+        var items = new List<PausedJobItem>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            var pages = await store.GetPagesAsync(job.Id, cancellationToken);
+            var completed = pages.Count(page => page.State is not PageCheckpointState.Pending);
+            var recognizer = job.Recognizer is null
+                ? "unknown recognizer"
+                : $"{job.Recognizer.Id}@{job.Recognizer.Version}";
+            items.Add(new PausedJobItem(
+                job.Id,
+                $"{job.Id:D} · {completed}/{job.Spec.Inputs.Count} · {recognizer}"));
+        }
+
+        _pausedJobs.ItemsSource = items;
+        _pausedJobs.SelectedItem = items.FirstOrDefault(item => item.Id == selectedId)
+            ?? items.FirstOrDefault();
+        UpdateSelectedJobControls();
+    }
+
+    private void UpdateSelectedJobControls()
+    {
+        var canEditSelection = !_closing
+            && _activeOperation is null
+            && _pausedJobs.SelectedItem is PausedJobItem;
+        _resumeSelectedButton.IsEnabled = canEditSelection;
+        _cancelSelectedButton.IsEnabled = canEditSelection;
     }
 
     private async Task<WorkerRecognizerSession> GetRecognizerSessionAsync(PluginPackage package)
@@ -569,4 +645,9 @@ public sealed partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "OcrWorkbench",
         "settings.json");
+
+    private sealed record PausedJobItem(Guid Id, string Display)
+    {
+        public override string ToString() => Display;
+    }
 }

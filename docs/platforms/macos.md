@@ -42,4 +42,5 @@ If access was denied previously, macOS may not show the dialog again. Enable NEO
 6. Trigger repeatedly during an active selection; only one overlay may exist.
 7. Quit and verify the shortcut is no longer registered.
 8. Run two OCR operations with the fake worker and verify the same worker remains active; cancel an active batch and verify its job is `Cancelled` and a later operation succeeds.
-9. Run a multi-image batch, request Pause, verify it stops after the active page, then Resume and verify the final export contains every page exactly once. Close a paused job and verify it is cancelled rather than left recoverable.
+9. Run a multi-image batch, request Pause, and close the app after it reaches `Paused`. Relaunch, select the persisted task, resume it, and verify the final export contains every page exactly once.
+10. While a CLI batch is running, launch the GUI and refresh paused tasks; verify the live CLI task is not recovered. After forcibly terminating the CLI, wait up to 15 seconds, refresh, and verify the task becomes resumable.
