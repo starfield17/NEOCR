@@ -46,7 +46,7 @@ The commit containing this file is the handoff baseline. Milestone 3C is impleme
 ## Known gaps
 
 - No production OCR worker/model package exists yet.
-- Milestone 4A now lives in the separate public [`NEOCR-Paddle`](https://github.com/starfield17/NEOCR-Paddle) repository. Four of the five fixed Paddle models pass the C# ONNX Runtime parity gate, but UVDoc's converted grid-prediction graph fails the unchanged `1e-4` threshold. Production-worker implementation is intentionally stopped; the external repository's `docs/uvdoc-parity-blocker.md` is authoritative.
+- Milestone 4A in the separate public [`NEOCR-Paddle`](https://github.com/starfield17/NEOCR-Paddle) repository passed all five fixed models at the unchanged common tolerance. GitHub Actions run `30747231341` validated one bundle through C# ONNX Runtime on Linux x64, macOS arm64 and Windows x64. The UVDoc issue was a Paddle oneDNN reference-kernel mismatch, not a Paddle2ONNX defect; the external repository's resolved blocker document is authoritative.
 - Atomic export precedes the fenced terminal transition. A hard process crash in that small interval can leave the new output present while the task later recovers as `Paused`; resume re-exports deterministically. No output-path lock was added in 3C.
 - Worker reuse is single-flight and has no idle timeout or manual unload control.
 - A worker crash fails the current task; replacement is lazy on the next operation and there is no automatic page retry.
@@ -55,4 +55,4 @@ The commit containing this file is the handoff baseline. Milestone 3C is impleme
 
 ## Next bounded task
 
-Resolve the UVDoc Milestone 4A stop decision before building the production worker: fix/fork Paddle2ONNX, select and benchmark another unwarping model, adopt Paddle Inference as a native runtime, or deliberately replace raw UVDoc tensor parity with an ADR-backed golden-document quality gate. Do not choose implicitly. Keep runtime and model package manifests independently versioned; the next host schema change is v4 because leases consumed schema v3.
+Begin the independently versioned Paddle worker/runtime/model implementation in `NEOCR-Paddle`, starting with a CPU detection-and-recognition vertical slice through the existing host protocol before adding the three optional document-enhancement stages. Keep runtime and model manifests independent; the next host schema change is v4 because leases consumed schema v3.
