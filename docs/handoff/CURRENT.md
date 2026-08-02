@@ -41,10 +41,12 @@ The commit containing this file is the handoff baseline. Milestone 3C is impleme
 - GitHub Actions run `30709060966` at `18bbb04` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for the permission-first ABI v2 change.
 - GitHub Actions run `30710134575` at `1669497` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for worker lifecycle integration tests.
 - GitHub Actions run `30733270865` at `151612e` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for transient checkpoints and pause/resume.
+- GitHub Actions run `30735564754` at `c74b4c9` passed on macOS 15, Windows 2025, and Ubuntu 24.04 for Milestone 3C startup recovery and leased execution.
 
 ## Known gaps
 
 - No production OCR worker/model package exists yet.
+- Milestone 4A now lives in the separate public [`NEOCR-Paddle`](https://github.com/starfield17/NEOCR-Paddle) repository. Four of the five fixed Paddle models pass the C# ONNX Runtime parity gate, but UVDoc's converted grid-prediction graph fails the unchanged `1e-4` threshold. Production-worker implementation is intentionally stopped; the external repository's `docs/uvdoc-parity-blocker.md` is authoritative.
 - Atomic export precedes the fenced terminal transition. A hard process crash in that small interval can leave the new output present while the task later recovers as `Paused`; resume re-exports deterministically. No output-path lock was added in 3C.
 - Worker reuse is single-flight and has no idle timeout or manual unload control.
 - A worker crash fails the current task; replacement is lazy on the next operation and there is no automatic page retry.
@@ -53,4 +55,4 @@ The commit containing this file is the handoff baseline. Milestone 3C is impleme
 
 ## Next bounded task
 
-Begin milestone 4A in a separate `NEOCR-Paddle` repository. Prove that all five selected Paddle pipeline models (document orientation, UVDoc unwarping, text-line orientation, detection and recognition) convert to ONNX and meet numerical/structural parity on macOS arm64 and Windows x64 assumptions before building the production worker. Keep runtime and model package manifests independently versioned; the next host schema change is v4 because leases consumed schema v3.
+Resolve the UVDoc Milestone 4A stop decision before building the production worker: fix/fork Paddle2ONNX, select and benchmark another unwarping model, adopt Paddle Inference as a native runtime, or deliberately replace raw UVDoc tensor parity with an ADR-backed golden-document quality gate. Do not choose implicitly. Keep runtime and model package manifests independently versioned; the next host schema change is v4 because leases consumed schema v3.
